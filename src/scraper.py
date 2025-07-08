@@ -13,6 +13,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 import platform
 import os
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,8 @@ class ChartScraper:
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-gpu')
+            options.add_argument('--disable-software-rasterizer')
+            options.add_argument('--disable-extensions')
             
             # Add specific configurations for different environments
             if platform.system() == 'Darwin':  # macOS
@@ -44,12 +47,23 @@ class ChartScraper:
                     options.binary_location = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
                 service = Service()
             else:  # Linux (Streamlit Cloud)
-                options.add_argument('--disable-software-rasterizer')
-                options.add_argument('--disable-extensions')
-                options.add_argument('--remote-debugging-port=9222')
-                if os.path.exists('/usr/bin/chromium-browser'):
-                    options.binary_location = '/usr/bin/chromium-browser'
-                service = Service('/usr/bin/chromedriver')
+                # Check for Debian/Ubuntu environment
+                if os.path.exists('/usr/bin/chromium'):
+                    options.binary_location = '/usr/bin/chromium'
+                    chrome_driver_path = '/usr/bin/chromedriver'
+                    if os.path.exists(chrome_driver_path):
+                        service = Service(chrome_driver_path)
+                    else:
+                        # Try to find chromedriver in other locations
+                        chrome_driver_path = shutil.which('chromedriver')
+                        if chrome_driver_path:
+                            service = Service(chrome_driver_path)
+                        else:
+                            # Fallback to ChromeDriverManager
+                            service = Service(ChromeDriverManager().install())
+                else:
+                    # Fallback to ChromeDriverManager
+                    service = Service(ChromeDriverManager().install())
             
             self.driver = webdriver.Chrome(service=service, options=options)
             logger.info("Selenium WebDriver initialized successfully")
