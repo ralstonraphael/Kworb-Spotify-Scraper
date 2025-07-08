@@ -13,7 +13,11 @@ import altair as alt
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-# Use absolute imports
+# Use relative imports
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
 from src import config
 from src.cleaner import DataCleaner
 from src.scraper import ChartScraper, ScrapingError

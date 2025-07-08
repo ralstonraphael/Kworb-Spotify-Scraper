@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include requirements.txt
+include pyproject.toml
+include setup.py
+include src/ui/*.py
+include src/config/*.py
+include src/*.py
+include tests/*.py
+include .streamlit/config.toml 
