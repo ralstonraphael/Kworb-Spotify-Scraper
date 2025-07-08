@@ -41,11 +41,26 @@ pip install -r requirements.txt
 
 ## Usage
 
-Run the app from the project root directory:
+You can run the app in two ways:
+
+### 1. Using the CLI (Command Line Interface)
 
 ```bash
-# Option 1: Using the entry point script (recommended)
-python run_app.py
+# Run with default settings
+python main.py
+
+# Run with specific date range
+python main.py --start-date 2024/01/01 --end-date 2024/01/31
+
+# Run with multiple output formats
+python main.py --formats csv excel json
+```
+
+### 2. Using the Streamlit UI
+
+```bash
+# Option 1: Using the CLI with UI flag
+python main.py --ui
 
 # Option 2: Using streamlit directly
 streamlit run src/ui/streamlit_app.py

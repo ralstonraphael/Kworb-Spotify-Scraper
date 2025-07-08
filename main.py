@@ -57,9 +57,9 @@ def parse_args() -> argparse.Namespace:
     )
     
     parser.add_argument(
-        "--use-selenium",
+        "--no-selenium",
         action="store_true",
-        help="Use Selenium for JavaScript-heavy pages"
+        help="Disable Selenium (not recommended)"
     )
     
     parser.add_argument(
@@ -83,8 +83,8 @@ def run_cli(args: argparse.Namespace):
     logger.info("Starting CLI scraping process...")
     
     try:
-        # Initialize scraper
-        scraper = ChartScraper(use_selenium=args.use_selenium)
+        # Initialize scraper (Selenium enabled by default)
+        scraper = ChartScraper(use_selenium=not args.no_selenium)
         
         # Get date range
         if not (args.start_date and args.end_date):
