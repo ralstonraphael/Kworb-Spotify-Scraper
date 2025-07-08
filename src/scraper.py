@@ -41,8 +41,9 @@ class ChartScraper:
             options.add_argument('--disable-gpu')
             options.add_argument('--disable-software-rasterizer')
             options.add_argument('--disable-extensions')
-            options.add_argument('--window-size=1920,1080')  # Set a standard window size
+            options.add_argument('--window-size=1920,1080')
             options.add_argument('--start-maximized')
+            options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
             
             # Add specific configurations for different environments
             if platform.system() == 'Darwin':  # macOS
@@ -81,23 +82,38 @@ class ChartScraper:
                 return element
             except TimeoutException:
                 if attempt == retries - 1:  # Last attempt
-                    raise
+                    return None
                 logger.warning(f"Attempt {attempt + 1} failed to find element {value}, retrying...")
+                time.sleep(2)  # Wait before retrying
+
+    def _wait_and_find_elements(self, by, value, timeout=10, retries=3):
+        """Wait for and find elements with retries."""
+        for attempt in range(retries):
+            try:
+                elements = WebDriverWait(self.driver, timeout).until(
+                    EC.presence_of_all_elements_located((by, value))
+                )
+                return elements
+            except TimeoutException:
+                if attempt == retries - 1:  # Last attempt
+                    return []
+                logger.warning(f"Attempt {attempt + 1} failed to find elements {value}, retrying...")
                 time.sleep(2)  # Wait before retrying
 
     def _safe_click(self, element, retries=3):
         """Safely click an element with retries."""
         for attempt in range(retries):
             try:
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                time.sleep(1)  # Wait for scroll
                 element.click()
                 return True
-            except ElementClickInterceptedException:
+            except Exception as e:
                 if attempt == retries - 1:  # Last attempt
-                    raise
+                    logger.warning(f"Failed to click element after {retries} attempts: {e}")
+                    return False
                 logger.warning(f"Click attempt {attempt + 1} failed, retrying...")
                 time.sleep(2)  # Wait before retrying
-                # Try scrolling to the element
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
     
     def _parse_number(self, value: str) -> Optional[int]:
         """Parse number from string, handling commas and dashes."""
@@ -132,19 +148,31 @@ class ChartScraper:
         try:
             # Load the page
             self.driver.get(url)
+            time.sleep(3)  # Wait for page to load
             
-            # Wait for page to load and try to find the Streams link
-            try:
+            # Try to find the table directly first
+            tables = self._wait_and_find_elements(By.TAG_NAME, "table")
+            
+            # If no tables found, try clicking the Streams link
+            if not tables:
                 streams_link = self._wait_and_find_element(By.LINK_TEXT, "Streams")
-                self._safe_click(streams_link)
-            except (TimeoutException, NoSuchElementException) as e:
-                logger.warning("Streams link not found, proceeding with current page")
+                if streams_link and self._safe_click(streams_link):
+                    time.sleep(2)  # Wait for table to load
+                    tables = self._wait_and_find_elements(By.TAG_NAME, "table")
             
-            # Wait for table to load
-            table = self._wait_and_find_element(By.TAG_NAME, "table")
-            
-            if not table:
+            if not tables:
                 raise ScrapingError("No data tables found on page")
+            
+            # Find the table with streaming data (usually has Date, Global, US columns)
+            target_table = None
+            for table in tables:
+                headers = [cell.text.strip() for cell in table.find_elements(By.TAG_NAME, "th")]
+                if "Date" in headers and "Global" in headers:
+                    target_table = table
+                    break
+            
+            if not target_table:
+                raise ScrapingError("Could not find streaming data table")
             
             # Initialize data dictionary with required columns
             data = {
@@ -154,7 +182,7 @@ class ChartScraper:
             }
             
             # Get all rows including Total and Peak
-            rows = table.find_elements(By.TAG_NAME, "tr")
+            rows = target_table.find_elements(By.TAG_NAME, "tr")
             
             # Process header row to find Global and US column indices
             header_cells = rows[0].find_elements(By.TAG_NAME, "th")
