@@ -8,7 +8,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException, StaleElementReferenceException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 import platform
@@ -51,7 +51,6 @@ class ChartScraper:
                     options.binary_location = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
                 service = Service()
             else:  # Linux (Streamlit Cloud)
-                # Check for Debian/Ubuntu environment
                 if os.path.exists('/usr/bin/chromium'):
                     options.binary_location = '/usr/bin/chromium'
                     chrome_driver_path = '/usr/bin/chromedriver'
@@ -72,48 +71,58 @@ class ChartScraper:
             logger.error(f"Failed to initialize Selenium WebDriver: {e}")
             raise
 
-    def _wait_and_find_element(self, by, value, timeout=10, retries=3):
-        """Wait for and find an element with retries."""
-        for attempt in range(retries):
+    def _wait_for_element(self, by, value, timeout=10, condition=EC.presence_of_element_located):
+        """Wait for an element with explicit wait and retry logic."""
+        start_time = time.time()
+        last_exception = None
+        
+        while time.time() - start_time < timeout:
             try:
-                element = WebDriverWait(self.driver, timeout).until(
-                    EC.presence_of_element_located((by, value))
-                )
+                element = WebDriverWait(self.driver, 2).until(condition((by, value)))
                 return element
-            except TimeoutException:
-                if attempt == retries - 1:  # Last attempt
-                    return None
-                logger.warning(f"Attempt {attempt + 1} failed to find element {value}, retrying...")
-                time.sleep(2)  # Wait before retrying
+            except (TimeoutException, StaleElementReferenceException) as e:
+                last_exception = e
+                time.sleep(0.5)
+                continue
+        
+        if last_exception:
+            logger.warning(f"Element not found after {timeout} seconds: {value}")
+            return None
+        return None
 
-    def _wait_and_find_elements(self, by, value, timeout=10, retries=3):
-        """Wait for and find elements with retries."""
-        for attempt in range(retries):
-            try:
-                elements = WebDriverWait(self.driver, timeout).until(
-                    EC.presence_of_all_elements_located((by, value))
-                )
-                return elements
-            except TimeoutException:
-                if attempt == retries - 1:  # Last attempt
-                    return []
-                logger.warning(f"Attempt {attempt + 1} failed to find elements {value}, retrying...")
-                time.sleep(2)  # Wait before retrying
+    def _wait_for_elements(self, by, value, timeout=10, condition=EC.presence_of_all_elements_located):
+        """Wait for elements with explicit wait and retry logic."""
+        element = self._wait_for_element(by, value, timeout, condition)
+        if element:
+            return self.driver.find_elements(by, value)
+        return []
 
-    def _safe_click(self, element, retries=3):
-        """Safely click an element with retries."""
-        for attempt in range(retries):
+    def _safe_click(self, element, timeout=10):
+        """Safely click an element with retry logic."""
+        if not element:
+            return False
+            
+        start_time = time.time()
+        while time.time() - start_time < timeout:
             try:
+                # Scroll element into view
                 self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
-                time.sleep(1)  # Wait for scroll
+                time.sleep(0.5)
+                
+                # Wait for element to be clickable
+                WebDriverWait(self.driver, 2).until(
+                    EC.element_to_be_clickable((By.ID, element.get_attribute("id")))
+                )
+                
+                # Try clicking
                 element.click()
                 return True
             except Exception as e:
-                if attempt == retries - 1:  # Last attempt
-                    logger.warning(f"Failed to click element after {retries} attempts: {e}")
-                    return False
-                logger.warning(f"Click attempt {attempt + 1} failed, retrying...")
-                time.sleep(2)  # Wait before retrying
+                logger.warning(f"Click attempt failed: {e}")
+                time.sleep(0.5)
+                continue
+        
+        return False
     
     def _parse_number(self, value: str) -> Optional[int]:
         """Parse number from string, handling commas and dashes."""
@@ -146,48 +155,59 @@ class ChartScraper:
         logger.info(f"Scraping track history from: {url}")
         
         try:
-            # Load the page
+            # Load the page and wait for it to be ready
             self.driver.get(url)
-            time.sleep(3)  # Wait for page to load
+            time.sleep(3)  # Initial page load wait
             
-            # Try to find the table directly first
-            tables = self._wait_and_find_elements(By.TAG_NAME, "table")
+            # Try multiple strategies to find the streaming data
             
-            # If no tables found, try clicking the Streams link
-            if not tables:
-                streams_link = self._wait_and_find_element(By.LINK_TEXT, "Streams")
+            # Strategy 1: Look for table directly
+            table = self._wait_for_element(
+                By.CSS_SELECTOR, 
+                "table:has(th:contains('Date')):has(th:contains('Global'))",
+                timeout=5
+            )
+            
+            # Strategy 2: Try clicking "Streams" link if table not found
+            if not table:
+                logger.info("Table not found directly, trying Streams link...")
+                streams_link = self._wait_for_element(
+                    By.XPATH,
+                    "//a[contains(text(), 'Streams')] | //a[.='Streams']",
+                    timeout=5
+                )
+                
                 if streams_link and self._safe_click(streams_link):
-                    time.sleep(2)  # Wait for table to load
-                    tables = self._wait_and_find_elements(By.TAG_NAME, "table")
+                    logger.info("Clicked Streams link, waiting for table...")
+                    time.sleep(2)
+                    table = self._wait_for_element(
+                        By.CSS_SELECTOR,
+                        "table:has(th:contains('Date')):has(th:contains('Global'))",
+                        timeout=5
+                    )
             
-            if not tables:
-                raise ScrapingError("No data tables found on page")
+            # Strategy 3: Look for any table with streaming data
+            if not table:
+                logger.info("Trying to find any table with streaming data...")
+                tables = self._wait_for_elements(By.TAG_NAME, "table", timeout=5)
+                for potential_table in tables:
+                    headers = [cell.text.strip() for cell in potential_table.find_elements(By.TAG_NAME, "th")]
+                    if "Date" in headers and "Global" in headers:
+                        table = potential_table
+                        break
             
-            # Find the table with streaming data (usually has Date, Global, US columns)
-            target_table = None
-            for table in tables:
-                headers = [cell.text.strip() for cell in table.find_elements(By.TAG_NAME, "th")]
-                if "Date" in headers and "Global" in headers:
-                    target_table = table
-                    break
+            if not table:
+                raise ScrapingError("Could not find streaming data table after multiple attempts")
             
-            if not target_table:
-                raise ScrapingError("Could not find streaming data table")
-            
-            # Initialize data dictionary with required columns
+            # Process the table data
             data = {
                 'date': [],
                 'Global': [],
                 'US': []
             }
             
-            # Get all rows including Total and Peak
-            rows = target_table.find_elements(By.TAG_NAME, "tr")
-            
-            # Process header row to find Global and US column indices
-            header_cells = rows[0].find_elements(By.TAG_NAME, "th")
-            headers = [cell.text.strip() for cell in header_cells]
-            
+            # Get headers first to find correct column indices
+            headers = [cell.text.strip() for cell in table.find_elements(By.TAG_NAME, "th")]
             try:
                 date_idx = headers.index('Date')
                 global_idx = headers.index('Global')
@@ -195,45 +215,42 @@ class ChartScraper:
             except ValueError:
                 raise ScrapingError("Required columns (Date, Global, US) not found in table")
             
-            # Process each row
-            for row in rows[1:]:  # Skip header row
-                cells = row.find_elements(By.TAG_NAME, "td")
-                if not cells:
+            # Get all rows
+            rows = table.find_elements(By.TAG_NAME, "tr")[1:]  # Skip header row
+            
+            # Process each row with retry logic for stale elements
+            for row in rows:
+                try:
+                    cells = row.find_elements(By.TAG_NAME, "td")
+                    if not cells:
+                        continue
+                    
+                    # Get values with explicit waits
+                    date_value = cells[date_idx].text.strip()
+                    global_value = cells[global_idx].text.strip()
+                    us_value = cells[us_idx].text.strip()
+                    
+                    data['date'].append(date_value)
+                    data['Global'].append(self._parse_number(global_value))
+                    data['US'].append(self._parse_number(us_value))
+                except StaleElementReferenceException:
+                    logger.warning("Encountered stale element, skipping row")
                     continue
-                
-                # Get values for our columns
-                date_value = cells[date_idx].text.strip()
-                global_value = cells[global_idx].text.strip()
-                us_value = cells[us_idx].text.strip()
-                
-                # Add to our data dictionary
-                data['date'].append(date_value)
-                data['Global'].append(self._parse_number(global_value))
-                data['US'].append(self._parse_number(us_value))
             
             # Create DataFrame
             df = pd.DataFrame(data)
             
-            # Ensure date column is properly formatted
+            # Process the data
             df['date'] = df['date'].apply(self._parse_date)
             
-            # Sort by date, but keep Total and Peak at the top
-            total_row = df[df['date'] == 'Total'].iloc[0] if len(df[df['date'] == 'Total']) > 0 else None
-            peak_row = df[df['date'] == 'Peak'].iloc[0] if len(df[df['date'] == 'Peak']) > 0 else None
+            # Handle special rows
+            total_peak_df = df[df['date'].isin(['Total', 'Peak'])]
+            regular_df = df[~df['date'].isin(['Total', 'Peak'])].sort_values('date', ascending=False)
             
-            # Remove Total and Peak rows from main DataFrame
-            df = df[~df['date'].isin(['Total', 'Peak'])]
+            # Combine the dataframes
+            final_df = pd.concat([total_peak_df, regular_df], ignore_index=True)
             
-            # Sort remaining rows by date
-            df = df.sort_values('date', ascending=False)
-            
-            # Add Total and Peak rows back at the top if they existed
-            if peak_row is not None:
-                df = pd.concat([pd.DataFrame([peak_row]), df], ignore_index=True)
-            if total_row is not None:
-                df = pd.concat([pd.DataFrame([total_row]), df], ignore_index=True)
-            
-            return df
+            return final_df
             
         except Exception as e:
             logger.error(f"Failed to scrape track history: {e}")
