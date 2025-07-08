@@ -8,12 +8,13 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 import platform
 import os
 import shutil
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,8 @@ class ChartScraper:
             options.add_argument('--disable-gpu')
             options.add_argument('--disable-software-rasterizer')
             options.add_argument('--disable-extensions')
+            options.add_argument('--window-size=1920,1080')  # Set a standard window size
+            options.add_argument('--start-maximized')
             
             # Add specific configurations for different environments
             if platform.system() == 'Darwin':  # macOS
@@ -54,15 +57,12 @@ class ChartScraper:
                     if os.path.exists(chrome_driver_path):
                         service = Service(chrome_driver_path)
                     else:
-                        # Try to find chromedriver in other locations
                         chrome_driver_path = shutil.which('chromedriver')
                         if chrome_driver_path:
                             service = Service(chrome_driver_path)
                         else:
-                            # Fallback to ChromeDriverManager
                             service = Service(ChromeDriverManager().install())
                 else:
-                    # Fallback to ChromeDriverManager
                     service = Service(ChromeDriverManager().install())
             
             self.driver = webdriver.Chrome(service=service, options=options)
@@ -70,6 +70,34 @@ class ChartScraper:
         except Exception as e:
             logger.error(f"Failed to initialize Selenium WebDriver: {e}")
             raise
+
+    def _wait_and_find_element(self, by, value, timeout=10, retries=3):
+        """Wait for and find an element with retries."""
+        for attempt in range(retries):
+            try:
+                element = WebDriverWait(self.driver, timeout).until(
+                    EC.presence_of_element_located((by, value))
+                )
+                return element
+            except TimeoutException:
+                if attempt == retries - 1:  # Last attempt
+                    raise
+                logger.warning(f"Attempt {attempt + 1} failed to find element {value}, retrying...")
+                time.sleep(2)  # Wait before retrying
+
+    def _safe_click(self, element, retries=3):
+        """Safely click an element with retries."""
+        for attempt in range(retries):
+            try:
+                element.click()
+                return True
+            except ElementClickInterceptedException:
+                if attempt == retries - 1:  # Last attempt
+                    raise
+                logger.warning(f"Click attempt {attempt + 1} failed, retrying...")
+                time.sleep(2)  # Wait before retrying
+                # Try scrolling to the element
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
     
     def _parse_number(self, value: str) -> Optional[int]:
         """Parse number from string, handling commas and dashes."""
@@ -102,18 +130,20 @@ class ChartScraper:
         logger.info(f"Scraping track history from: {url}")
         
         try:
-            # Click on Streams link to ensure we get stream data
+            # Load the page
             self.driver.get(url)
-            streams_link = self.driver.find_element(By.LINK_TEXT, "Streams")
-            streams_link.click()
             
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "table"))
-            )
+            # Wait for page to load and try to find the Streams link
+            try:
+                streams_link = self._wait_and_find_element(By.LINK_TEXT, "Streams")
+                self._safe_click(streams_link)
+            except (TimeoutException, NoSuchElementException) as e:
+                logger.warning("Streams link not found, proceeding with current page")
             
-            # Find the main data table
-            tables = self.driver.find_elements(By.TAG_NAME, "table")
-            if not tables:
+            # Wait for table to load
+            table = self._wait_and_find_element(By.TAG_NAME, "table")
+            
+            if not table:
                 raise ScrapingError("No data tables found on page")
             
             # Initialize data dictionary with required columns
@@ -124,7 +154,7 @@ class ChartScraper:
             }
             
             # Get all rows including Total and Peak
-            rows = tables[0].find_elements(By.TAG_NAME, "tr")
+            rows = table.find_elements(By.TAG_NAME, "tr")
             
             # Process header row to find Global and US column indices
             header_cells = rows[0].find_elements(By.TAG_NAME, "th")
@@ -177,9 +207,8 @@ class ChartScraper:
             
             return df
             
-        except TimeoutException:
-            raise ScrapingError("Timeout waiting for page to load")
         except Exception as e:
+            logger.error(f"Failed to scrape track history: {e}")
             raise ScrapingError(f"Failed to scrape track history: {e}")
     
     def discover_available_weeks(self) -> List[datetime]:
