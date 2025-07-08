@@ -1,17 +1,33 @@
-"""AI helper module for data structuring and cleaning."""
-from typing import Dict, List
+"""AI helper module for processing Spotify chart data."""
+import logging
 import os
-from openai import OpenAI
-from dotenv import load_dotenv
-import pandas as pd
+from typing import Dict, List, Optional
+import openai
+import streamlit as st
 
-# Load environment variables
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 class AIHelper:
+    """Helper class for AI-powered data processing."""
+    
     def __init__(self):
-        """Initialize the AI helper with OpenAI client."""
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        """Initialize the AI helper."""
+        # Try to get API key from environment variable first
+        api_key = os.getenv("OPENAI_API_KEY")
+        
+        # If not found in environment, try Streamlit secrets
+        if not api_key and hasattr(st, "secrets"):
+            api_key = st.secrets.get("OPENAI_API_KEY")
+        
+        if not api_key:
+            raise ValueError(
+                "OpenAI API key not found. Please set it in your environment variables "
+                "or Streamlit secrets with the key 'OPENAI_API_KEY'"
+            )
+        
+        # Set the API key for the OpenAI client
+        openai.api_key = api_key
+        logger.info("OpenAI API key configured successfully")
 
     def clean_and_format_data(self, raw_data: List[Dict]) -> List[Dict]:
         """
@@ -27,7 +43,7 @@ class AIHelper:
             # Convert a sample of the data to string for AI processing
             sample_data = str(raw_data[:2])
             
-            response = self.client.chat.completions.create(
+            response = openai.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": """You are a data cleaning expert. Your task is to:
