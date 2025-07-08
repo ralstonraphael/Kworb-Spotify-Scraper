@@ -1,71 +1,72 @@
-# Spotify Chart History Scraper
+# Kworb Spotify Scraper
 
-A sleek, modern tool to analyze Spotify streaming data from KWORB.net with precision and elegance.
-
-## Overview
-
-This application provides a streamlined interface to track and analyze Spotify streaming performance. It captures historical streaming data with a focus on global and US markets, presenting insights through clean, interactive visualizations.
+A modern, elegant tool for scraping and analyzing Spotify chart data from KWORB.net, featuring AI-powered data cleaning and structuring.
 
 ## Features
 
-- **Track Analysis**: Enter any Spotify track URL or ID to view its streaming history
-- **Data Visualization**: Interactive charts showing streaming performance over time
-- **Market Comparison**: Side-by-side analysis of global and US performance
-- **Data Export**: Download complete streaming history in CSV format
-- **Clean Interface**: Minimalist design focused on data clarity
+- 🔍 Scrapes Spotify chart data from KWORB.net
+- 🤖 AI-powered data cleaning and formatting
+- 📊 Clean data presentation through Streamlit UI
+- 🌍 Global and US streaming data tracking
+- 📈 Historical trend analysis
 
-## Quick Start
+## Setup
 
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/spotify-chart-scraper.git
-cd spotify-chart-scraper
+git clone https://github.com/ralstonraphael/Kworb-Spotify-Scraper.git
+cd Kworb-Spotify-Scraper
 ```
 
-2. Install dependencies:
+2. Create and activate a virtual environment:
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Create a `.env` file in the project root:
+4. Configure environment:
+   - Create `.streamlit/secrets.toml`
+   - Add your OpenAI API key:
+     ```toml
+     OPENAI_API_KEY = "your-api-key"
+     ```
 
-```bash
-OPENAI_API_KEY=your_api_key_here
-```
+## Usage
 
-4. Run the application:
+Run the Streamlit app:
 
 ```bash
 streamlit run src/ui/streamlit_app.py
 ```
 
-## Usage
+## Project Structure
 
-1. Launch the application
-2. Enter a Spotify track URL or KWORB URL in the sidebar
-3. View streaming history, visualizations, and download data as needed
+```
+Kworb-Spotify-Scraper/
+├── data/               # Data storage
+├── src/               # Source code
+│   ├── ai_helper.py   # AI processing
+│   ├── cleaner.py    # Data cleaning
+│   ├── scraper.py    # Web scraping
+│   └── ui/           # Streamlit interface
+└── tests/            # Test suite
+```
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.8+
 - Chrome/Chromium browser
-- OpenAI API key for data processing
-
-## Data Structure
-
-The application captures:
-
-- Total streams (Global and US)
-- Peak streams
-- Daily streaming data
-- Chart entry and exit dates
-
-## Contributing
-
-We welcome contributions that maintain the project's minimalist and elegant approach. Please ensure your code follows the existing style and includes appropriate tests.
+- OpenAI API key
+- Internet connection
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the terms of the MIT license.
