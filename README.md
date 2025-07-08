@@ -1,16 +1,16 @@
-# Kworb Spotify Scraper
+# KWORB Spotify Charts Scraper
 
-A modern, elegant tool for scraping and analyzing Spotify chart data from KWORB.net, featuring AI-powered data cleaning and structuring.
+A robust Python scraper for extracting streaming data from KWORB.net's Spotify Global Charts.
 
 ## Features
 
-- 🔍 Scrapes Spotify chart data from KWORB.net
-- 🤖 AI-powered data cleaning and formatting
-- 📊 Clean data presentation through Streamlit UI
-- 🌍 Global and US streaming data tracking
-- 📈 Historical trend analysis
+- 🚀 Fast and reliable with headless Chrome
+- 🔄 Multiple retry strategies and fallback locators
+- 📊 Clean CSV output with track history
+- 🪵 Detailed logging and error handling
+- 🛡️ Browser crash protection with context manager
 
-## Setup
+## Installation
 
 1. Clone the repository:
 
@@ -26,66 +26,76 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. Install the package in development mode:
+3. Install dependencies:
 
 ```bash
-pip install -e .
+pip install -r requirements.txt
 ```
-
-4. Configure environment:
-   - Create `.streamlit/secrets.toml`
-   - Add your OpenAI API key:
-     ```toml
-     OPENAI_API_KEY = "your-api-key"
-     ```
 
 ## Usage
 
-You can run the app in two ways:
+1. Edit the `tracks` list in `src/kworb_scraper.py` with your target tracks:
 
-### 1. Using the CLI (Command Line Interface)
+```python
+tracks = [
+    TrackData(
+        track_id="42UBPzRMh5yyz0EDPr6fr1",
+        name="Example Track 1",
+        url="https://kworb.net/spotify/track/42UBPzRMh5yyz0EDPr6fr1.html"
+    ),
+    # Add more tracks...
+]
+```
+
+2. Run the scraper:
 
 ```bash
-# Run with default settings
-python -m src.main
-
-# Run with specific date range
-python -m src.main --start-date 2024/01/01 --end-date 2024/01/31
-
-# Run with multiple output formats
-python -m src.main --formats csv excel json
+python src/kworb_scraper.py
 ```
 
-### 2. Using the Streamlit UI
+The script will:
 
-```bash
-# Option 1: Using the CLI with UI flag
-python -m src.main --ui
+- Create a `kworb_scraper.log` file with detailed logs
+- Output results to `spotify_streams.csv`
+- Show progress and any errors in the console
 
-# Option 2: Using streamlit directly
-python -m streamlit run src/ui/streamlit_app.py
-```
+## Configuration
 
-## Project Structure
+You can adjust these parameters in `main()`:
 
-```
-Kworb-Spotify-Scraper/
-├── data/               # Data storage
-├── src/               # Source code
-│   ├── ai_helper.py   # AI processing
-│   ├── cleaner.py    # Data cleaning
-│   ├── scraper.py    # Web scraping
-│   └── ui/           # Streamlit interface
-└── tests/            # Test suite
-```
+- `headless`: Run Chrome in headless mode (default: True)
+- `retry_count`: Number of retries per track (default: 3)
+- `timeout`: Wait timeout in seconds (default: 10)
 
-## Requirements
+## Output Format
 
-- Python 3.8+
-- Chrome/Chromium browser
-- OpenAI API key
-- Internet connection
+The CSV file contains:
+
+- `track_id`: Spotify track ID
+- `track_name`: Track name
+- `date`: Stream date
+- `streams`: Global stream count
+
+## Error Handling
+
+The scraper handles:
+
+- Network issues
+- Missing elements
+- Stale elements
+- Click failures
+- Browser crashes
+
+Failed tracks are logged with detailed error messages.
+
+## Contributing
+
+Pull requests welcome! Please ensure you:
+
+1. Add tests for new features
+2. Update documentation
+3. Follow the existing code style
 
 ## License
 
-This project is licensed under the terms of the MIT license.
+MIT License - see LICENSE file for details
