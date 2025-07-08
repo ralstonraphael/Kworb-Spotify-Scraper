@@ -41,9 +41,13 @@ pip install -r requirements.txt
 
 ## Usage
 
-Run the Streamlit app:
+Run the app from the project root directory:
 
 ```bash
+# Option 1: Using the entry point script (recommended)
+python run_app.py
+
+# Option 2: Using streamlit directly
 streamlit run src/ui/streamlit_app.py
 ```
 
