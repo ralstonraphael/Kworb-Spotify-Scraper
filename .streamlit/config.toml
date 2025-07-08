@@ -8,6 +8,17 @@ font = "sans serif"
 [server]
 enableCORS = true
 enableXsrfProtection = true
+maxUploadSize = 200
+enableWebsocketCompression = false
 
 [browser]
-gatherUsageStats = false 
+gatherUsageStats = false
+
+[runner]
+fastReruns = true
+
+[client]
+showErrorDetails = true
+
+[logger]
+level = "info" 

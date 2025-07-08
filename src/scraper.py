@@ -11,6 +11,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+import platform
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,21 @@ class ChartScraper:
             options.add_argument('--headless')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
             
-            service = Service(ChromeDriverManager().install())
+            # Add specific configurations for different environments
+            if platform.system() == 'Darwin':  # macOS
+                if platform.machine() == 'arm64':
+                    options.binary_location = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+                service = Service()
+            else:  # Linux (Streamlit Cloud)
+                options.add_argument('--disable-software-rasterizer')
+                options.add_argument('--disable-extensions')
+                options.add_argument('--remote-debugging-port=9222')
+                if os.path.exists('/usr/bin/chromium-browser'):
+                    options.binary_location = '/usr/bin/chromium-browser'
+                service = Service('/usr/bin/chromedriver')
+            
             self.driver = webdriver.Chrome(service=service, options=options)
             logger.info("Selenium WebDriver initialized successfully")
         except Exception as e:
