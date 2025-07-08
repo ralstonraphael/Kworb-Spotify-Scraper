@@ -1,0 +1,307 @@
+"""Module for scraping Spotify chart data from KWORB."""
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+import pandas as pd
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
+
+logger = logging.getLogger(__name__)
+
+class ScrapingError(Exception):
+    """Custom exception for scraping errors."""
+    pass
+
+class ChartScraper:
+    """Scraper for KWORB Spotify charts."""
+    
+    def __init__(self, use_selenium: bool = True):
+        """Initialize the scraper."""
+        self.use_selenium = use_selenium
+        if use_selenium:
+            self._init_selenium()
+    
+    def _init_selenium(self):
+        """Initialize Selenium WebDriver."""
+        try:
+            options = webdriver.ChromeOptions()
+            options.add_argument('--headless')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=options)
+            logger.info("Selenium WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Selenium WebDriver: {e}")
+            raise
+    
+    def _parse_number(self, value: str) -> Optional[int]:
+        """Parse number from string, handling commas and dashes."""
+        try:
+            if value == '--' or not value:
+                return None
+            return int(value.replace(',', ''))
+        except (ValueError, AttributeError):
+            return None
+    
+    def _parse_date(self, date_str: str) -> str:
+        """Parse date string to YYYY/MM/DD format."""
+        try:
+            date_obj = datetime.strptime(date_str, '%Y/%m/%d')
+            return date_obj.strftime('%Y/%m/%d')
+        except ValueError:
+            return date_str
+
+    def scrape_track_history(self, track_id: str) -> pd.DataFrame:
+        """
+        Scrape track streaming history from KWORB.
+        
+        Args:
+            track_id: Spotify track ID
+            
+        Returns:
+            DataFrame with track streaming history (Date, Global, US columns)
+        """
+        url = f"https://kworb.net/spotify/track/{track_id}.html"
+        logger.info(f"Scraping track history from: {url}")
+        
+        try:
+            # Click on Streams link to ensure we get stream data
+            self.driver.get(url)
+            streams_link = self.driver.find_element(By.LINK_TEXT, "Streams")
+            streams_link.click()
+            
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "table"))
+            )
+            
+            # Find the main data table
+            tables = self.driver.find_elements(By.TAG_NAME, "table")
+            if not tables:
+                raise ScrapingError("No data tables found on page")
+            
+            # Initialize data dictionary with required columns
+            data = {
+                'date': [],
+                'Global': [],
+                'US': []
+            }
+            
+            # Get all rows including Total and Peak
+            rows = tables[0].find_elements(By.TAG_NAME, "tr")
+            
+            # Process header row to find Global and US column indices
+            header_cells = rows[0].find_elements(By.TAG_NAME, "th")
+            headers = [cell.text.strip() for cell in header_cells]
+            
+            try:
+                date_idx = headers.index('Date')
+                global_idx = headers.index('Global')
+                us_idx = headers.index('US')
+            except ValueError:
+                raise ScrapingError("Required columns (Date, Global, US) not found in table")
+            
+            # Process each row
+            for row in rows[1:]:  # Skip header row
+                cells = row.find_elements(By.TAG_NAME, "td")
+                if not cells:
+                    continue
+                
+                # Get values for our columns
+                date_value = cells[date_idx].text.strip()
+                global_value = cells[global_idx].text.strip()
+                us_value = cells[us_idx].text.strip()
+                
+                # Add to our data dictionary
+                data['date'].append(date_value)
+                data['Global'].append(self._parse_number(global_value))
+                data['US'].append(self._parse_number(us_value))
+            
+            # Create DataFrame
+            df = pd.DataFrame(data)
+            
+            # Ensure date column is properly formatted
+            df['date'] = df['date'].apply(self._parse_date)
+            
+            # Sort by date, but keep Total and Peak at the top
+            total_row = df[df['date'] == 'Total'].iloc[0] if len(df[df['date'] == 'Total']) > 0 else None
+            peak_row = df[df['date'] == 'Peak'].iloc[0] if len(df[df['date'] == 'Peak']) > 0 else None
+            
+            # Remove Total and Peak rows from main DataFrame
+            df = df[~df['date'].isin(['Total', 'Peak'])]
+            
+            # Sort remaining rows by date
+            df = df.sort_values('date', ascending=False)
+            
+            # Add Total and Peak rows back at the top if they existed
+            if peak_row is not None:
+                df = pd.concat([pd.DataFrame([peak_row]), df], ignore_index=True)
+            if total_row is not None:
+                df = pd.concat([pd.DataFrame([total_row]), df], ignore_index=True)
+            
+            return df
+            
+        except TimeoutException:
+            raise ScrapingError("Timeout waiting for page to load")
+        except Exception as e:
+            raise ScrapingError(f"Failed to scrape track history: {e}")
+    
+    def discover_available_weeks(self) -> List[datetime]:
+        """Discover available chart weeks."""
+        logger.info("Discovering available chart weeks...")
+        url = "https://kworb.net/spotify/"
+        
+        try:
+            self.driver.get(url)
+            
+            # Try to find the table with dates
+            try:
+                table = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "table"))
+                )
+            except TimeoutException:
+                logger.warning("Table element not found, proceeding with available content")
+                table = None
+            
+            dates = []
+            if table:
+                # Find all date links
+                date_links = table.find_elements(By.TAG_NAME, "a")
+                for link in date_links:
+                    try:
+                        date_text = link.text.strip()
+                        date_obj = datetime.strptime(date_text, '%Y/%m/%d')
+                        dates.append(date_obj)
+                    except ValueError:
+                        continue
+            
+            if not dates:
+                logger.warning("No dates found in the page")
+                # Use current date as fallback
+                current_date = datetime.now()
+                logger.info(f"Using current date as fallback: {current_date}")
+                dates = [current_date]
+            
+            logger.info(f"Discovered {len(dates)} available chart weeks")
+            return sorted(dates)
+            
+        except Exception as e:
+            logger.error(f"Failed to discover available weeks: {e}")
+            raise ScrapingError(f"Failed to discover available weeks: {e}")
+    
+    def scrape_date_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        output_dir: Optional[Path] = None
+    ) -> pd.DataFrame:
+        """
+        Scrape chart data for a date range.
+        
+        Args:
+            start_date: Start date to scrape from
+            end_date: End date to scrape to
+            output_dir: Optional directory to save raw data files
+            
+        Returns:
+            DataFrame with combined chart data
+        """
+        try:
+            available_dates = self.discover_available_weeks()
+            dates_to_scrape = [
+                d for d in available_dates
+                if start_date <= d <= end_date
+            ]
+            
+            all_data = []
+            for date in dates_to_scrape:
+                date_str = date.strftime('%Y/%m/%d')
+                url = f"https://kworb.net/spotify/weekly/{date_str}.html"
+                
+                try:
+                    self.driver.get(url)
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "table"))
+                    )
+                    
+                    # Find the main data table
+                    tables = self.driver.find_elements(By.TAG_NAME, "table")
+                    if not tables:
+                        logger.warning(f"No data tables found for date: {date_str}")
+                        continue
+                    
+                    # Get column headers
+                    headers = []
+                    header_cells = tables[0].find_elements(By.TAG_NAME, "th")
+                    for cell in header_cells:
+                        headers.append(cell.text.strip())
+                    
+                    # Initialize data dictionary
+                    data = {header: [] for header in headers}
+                    data['chart_date'] = []  # Add date column
+                    
+                    # Get all rows
+                    rows = tables[0].find_elements(By.TAG_NAME, "tr")
+                    
+                    for row in rows[1:]:  # Skip header row
+                        cells = row.find_elements(By.TAG_NAME, "td")
+                        data['chart_date'].append(date_str)
+                        
+                        for header, cell in zip(headers, cells):
+                            value = cell.text.strip()
+                            if header in ['Global', 'US', 'PH', 'GB', 'CA', 'ID', 'AU', 'MY', 'IE', 
+                                        'SG', 'NO', 'AR', 'NZ', 'CL', 'AE', 'PE', 'PT', 'NL', 'SE', 'FI', 'CR']:
+                                data[header].append(self._parse_number(value))
+                            else:
+                                data[header].append(value)
+                    
+                    # Create DataFrame for this date
+                    df = pd.DataFrame(data)
+                    all_data.append(df)
+                    
+                    # Save raw data if output directory provided
+                    if output_dir:
+                        output_dir = Path(output_dir)
+                        output_dir.mkdir(parents=True, exist_ok=True)
+                        output_file = output_dir / f"chart_{date_str}.csv"
+                        df.to_csv(output_file, index=False)
+                        logger.info(f"Saved raw data to: {output_file}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to scrape data for {date_str}: {e}")
+                    continue
+            
+            if not all_data:
+                raise ScrapingError("No data scraped for the specified date range")
+            
+            # Combine all data
+            combined_df = pd.concat(all_data, ignore_index=True)
+            
+            # Ensure consistent column order
+            column_order = ['chart_date', 'Global', 'US', 'PH', 'GB', 'CA', 'ID', 'AU', 'MY', 'IE', 
+                          'SG', 'NO', 'AR', 'NZ', 'CL', 'AE', 'PE', 'PT', 'NL', 'SE', 'FI', 'CR']
+            
+            # Add any missing columns with None values
+            for col in column_order:
+                if col not in combined_df.columns:
+                    combined_df[col] = None
+            
+            # Reorder columns
+            combined_df = combined_df[column_order]
+            
+            return combined_df
+            
+        except Exception as e:
+            raise ScrapingError(f"Failed to scrape date range: {e}")
+    
+    def __del__(self):
+        """Clean up Selenium WebDriver."""
+        if hasattr(self, 'driver'):
+            self.driver.quit() 
