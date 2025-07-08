@@ -26,10 +26,10 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. Install dependencies:
+3. Install the package in development mode:
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
 4. Configure environment:
@@ -47,23 +47,23 @@ You can run the app in two ways:
 
 ```bash
 # Run with default settings
-python main.py
+python -m src.main
 
 # Run with specific date range
-python main.py --start-date 2024/01/01 --end-date 2024/01/31
+python -m src.main --start-date 2024/01/01 --end-date 2024/01/31
 
 # Run with multiple output formats
-python main.py --formats csv excel json
+python -m src.main --formats csv excel json
 ```
 
 ### 2. Using the Streamlit UI
 
 ```bash
 # Option 1: Using the CLI with UI flag
-python main.py --ui
+python -m src.main --ui
 
 # Option 2: Using streamlit directly
-streamlit run src/ui/streamlit_app.py
+python -m streamlit run src/ui/streamlit_app.py
 ```
 
 ## Project Structure

@@ -1,9 +1,16 @@
+"""Setup configuration for the Kworb Spotify Scraper package."""
 from setuptools import find_packages, setup
 
 setup(
-    name="spotify-chart-scraper",
+    name="kworb-spotify-scraper",
     version="1.0.0",
-    packages=find_packages(),
+    description="A modern tool for scraping and analyzing Spotify chart data from KWORB.net",
+    author="Ralston Raphael",
+    author_email="",  # Add your email if you want
+    packages=find_packages(include=["src", "src.*"]),
+    package_data={
+        "src": ["ui/*", "config/*"],
+    },
     install_requires=[
         "beautifulsoup4>=4.12.0",
         "requests>=2.31.0",
@@ -21,7 +28,13 @@ setup(
         "typing-extensions>=4.8.0",
         "black>=23.11.0",
         "isort>=5.12.0",
-        "mypy>=1.7.0"
+        "mypy>=1.7.0",
+        "openai>=1.3.0"
     ],
     python_requires=">=3.8",
+    entry_points={
+        "console_scripts": [
+            "kworb-scraper=src.main:main",
+        ],
+    },
 ) 
