@@ -35,7 +35,7 @@ class ChartScraper:
         """Initialize Selenium WebDriver."""
         try:
             options = webdriver.ChromeOptions()
-            options.add_argument('--headless')
+            options.add_argument('--headless=new')  # Use new headless mode
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-gpu')
@@ -66,64 +66,80 @@ class ChartScraper:
                     service = Service(ChromeDriverManager().install())
             
             self.driver = webdriver.Chrome(service=service, options=options)
+            self.wait = WebDriverWait(self.driver, 10)  # Create a WebDriverWait instance
             logger.info("Selenium WebDriver initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Selenium WebDriver: {e}")
             raise
 
-    def _wait_for_element(self, by, value, timeout=10, condition=EC.presence_of_element_located):
-        """Wait for an element with explicit wait and retry logic."""
-        start_time = time.time()
-        last_exception = None
-        
-        while time.time() - start_time < timeout:
-            try:
-                element = WebDriverWait(self.driver, 2).until(condition((by, value)))
-                return element
-            except (TimeoutException, StaleElementReferenceException) as e:
-                last_exception = e
-                time.sleep(0.5)
-                continue
-        
-        if last_exception:
-            logger.warning(f"Element not found after {timeout} seconds: {value}")
+    def _check_element_exists(self, by, value, timeout=5) -> bool:
+        """Check if an element exists on the page."""
+        try:
+            WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((by, value))
+            )
+            return True
+        except (TimeoutException, NoSuchElementException):
+            return False
+
+    def _find_element_safely(self, by, value, timeout=5, check_visibility=True):
+        """Find an element with proper waiting and error handling."""
+        try:
+            if check_visibility:
+                element = WebDriverWait(self.driver, timeout).until(
+                    EC.visibility_of_element_located((by, value))
+                )
+            else:
+                element = WebDriverWait(self.driver, timeout).until(
+                    EC.presence_of_element_located((by, value))
+                )
+            return element
+        except TimeoutException:
+            logger.warning(f"Element not found: {value}")
             return None
-        return None
 
-    def _wait_for_elements(self, by, value, timeout=10, condition=EC.presence_of_all_elements_located):
-        """Wait for elements with explicit wait and retry logic."""
-        element = self._wait_for_element(by, value, timeout, condition)
-        if element:
+    def _find_elements_safely(self, by, value, timeout=5, check_visibility=True):
+        """Find elements with proper waiting and error handling."""
+        try:
+            if check_visibility:
+                WebDriverWait(self.driver, timeout).until(
+                    EC.visibility_of_element_located((by, value))
+                )
+            else:
+                WebDriverWait(self.driver, timeout).until(
+                    EC.presence_of_element_located((by, value))
+                )
             return self.driver.find_elements(by, value)
-        return []
+        except TimeoutException:
+            logger.warning(f"No elements found: {value}")
+            return []
 
-    def _safe_click(self, element, timeout=10):
-        """Safely click an element with retry logic."""
+    def _click_safely(self, element, timeout=5):
+        """Click an element with proper waiting and error handling."""
         if not element:
             return False
-            
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                # Scroll element into view
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
-                time.sleep(0.5)
-                
-                # Wait for element to be clickable
-                WebDriverWait(self.driver, 2).until(
-                    EC.element_to_be_clickable((By.ID, element.get_attribute("id")))
-                )
-                
-                # Try clicking
-                element.click()
-                return True
-            except Exception as e:
-                logger.warning(f"Click attempt failed: {e}")
-                time.sleep(0.5)
-                continue
         
-        return False
-    
+        try:
+            # Scroll into view
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+            time.sleep(0.5)
+            
+            # Wait for element to be clickable
+            WebDriverWait(self.driver, timeout).until(
+                EC.element_to_be_clickable((By.ID, element.get_attribute("id")))
+            )
+            
+            # Try JavaScript click if regular click fails
+            try:
+                element.click()
+            except:
+                self.driver.execute_script("arguments[0].click();", element)
+            
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to click element: {e}")
+            return False
+
     def _parse_number(self, value: str) -> Optional[int]:
         """Parse number from string, handling commas and dashes."""
         try:
@@ -155,46 +171,47 @@ class ChartScraper:
         logger.info(f"Scraping track history from: {url}")
         
         try:
-            # Load the page and wait for it to be ready
+            # Load the page
             self.driver.get(url)
             time.sleep(3)  # Initial page load wait
             
             # Try multiple strategies to find the streaming data
+            table = None
             
-            # Strategy 1: Look for table directly
-            table = self._wait_for_element(
-                By.CSS_SELECTOR, 
-                "table:has(th:contains('Date')):has(th:contains('Global'))",
-                timeout=5
-            )
+            # Strategy 1: Try to find table directly
+            table_locators = [
+                (By.CSS_SELECTOR, "table"),  # Simple table
+                (By.XPATH, "//table[.//th[contains(text(), 'Date')] and .//th[contains(text(), 'Global')]]"),  # Table with specific headers
+                (By.CSS_SELECTOR, "table:has(th:contains('Date')):has(th:contains('Global'))")  # Table with specific headers using CSS
+            ]
+            
+            for by, value in table_locators:
+                table = self._find_element_safely(by, value)
+                if table:
+                    break
             
             # Strategy 2: Try clicking "Streams" link if table not found
             if not table:
                 logger.info("Table not found directly, trying Streams link...")
-                streams_link = self._wait_for_element(
-                    By.XPATH,
-                    "//a[contains(text(), 'Streams')] | //a[.='Streams']",
-                    timeout=5
-                )
+                link_locators = [
+                    (By.LINK_TEXT, "Streams"),
+                    (By.PARTIAL_LINK_TEXT, "Stream"),
+                    (By.XPATH, "//a[contains(text(), 'Streams')]"),
+                    (By.XPATH, "//a[normalize-space()='Streams']")
+                ]
                 
-                if streams_link and self._safe_click(streams_link):
-                    logger.info("Clicked Streams link, waiting for table...")
-                    time.sleep(2)
-                    table = self._wait_for_element(
-                        By.CSS_SELECTOR,
-                        "table:has(th:contains('Date')):has(th:contains('Global'))",
-                        timeout=5
-                    )
-            
-            # Strategy 3: Look for any table with streaming data
-            if not table:
-                logger.info("Trying to find any table with streaming data...")
-                tables = self._wait_for_elements(By.TAG_NAME, "table", timeout=5)
-                for potential_table in tables:
-                    headers = [cell.text.strip() for cell in potential_table.find_elements(By.TAG_NAME, "th")]
-                    if "Date" in headers and "Global" in headers:
-                        table = potential_table
-                        break
+                for by, value in link_locators:
+                    streams_link = self._find_element_safely(by, value)
+                    if streams_link and self._click_safely(streams_link):
+                        logger.info("Clicked Streams link, waiting for table...")
+                        time.sleep(2)
+                        # Try to find table again
+                        for by, value in table_locators:
+                            table = self._find_element_safely(by, value)
+                            if table:
+                                break
+                        if table:
+                            break
             
             if not table:
                 raise ScrapingError("Could not find streaming data table after multiple attempts")
