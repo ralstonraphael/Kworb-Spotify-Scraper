@@ -47,21 +47,53 @@ class ChartScraper:
             return f"{base_url}_daily.html"
         return f"{base_url}.html"
     
-    def _switch_to_daily_view(self):
-        """Switch to daily view if available."""
+    def _extract_daily_cell_value(self, cell) -> str:
+        """Extract value from a daily data cell with nested spans."""
         try:
-            # Try to find and click the daily button
-            daily_button = self.driver.find_element(By.ID, "daily")
-            if daily_button:
-                daily_button.click()
-                time.sleep(2)  # Wait for the view to update
-                return True
+            # Find the span with class 's' which contains the actual value
+            value_span = cell.find_element(By.CSS_SELECTOR, "span.s")
+            if value_span:
+                return value_span.text.strip()
         except NoSuchElementException:
             pass
-        return False
+        
+        # Fallback to direct cell text if span not found
+        return cell.text.strip()
     
-    def _extract_table_data(self, table_element) -> pd.DataFrame:
-        """Extract data from a table element into a DataFrame."""
+    def _extract_daily_table_data(self, table_element) -> pd.DataFrame:
+        """Extract data from a daily table with nested spans."""
+        headers = []
+        try:
+            header_cells = table_element.find_elements(By.TAG_NAME, "th")
+            headers = [cell.text.strip() for cell in header_cells]
+        except NoSuchElementException:
+            logging.warning("No header cells found in table")
+            return pd.DataFrame()
+        
+        rows = []
+        try:
+            row_elements = table_element.find_elements(By.TAG_NAME, "tr")
+            for row in row_elements:
+                cells = row.find_elements(By.TAG_NAME, "td")
+                if cells:  # Skip header row
+                    # Extract values, handling nested spans
+                    row_data = []
+                    for cell in cells:
+                        value = self._extract_daily_cell_value(cell)
+                        row_data.append(value)
+                    
+                    if len(row_data) == len(headers):  # Only add rows that match header length
+                        rows.append(row_data)
+        except NoSuchElementException:
+            logging.warning("No data rows found in table")
+            return pd.DataFrame()
+        
+        # Create DataFrame
+        df = pd.DataFrame(rows, columns=headers)
+        return df
+    
+    def _extract_weekly_table_data(self, table_element) -> pd.DataFrame:
+        """Extract data from a weekly table."""
         headers = []
         try:
             header_cells = table_element.find_elements(By.TAG_NAME, "th")
@@ -99,24 +131,11 @@ class ChartScraper:
         while retries < RETRY_COUNT:
             try:
                 self.driver.get(url)
+                time.sleep(2)  # Wait for JavaScript to execute
                 
                 # Wait for any table to load
                 wait = WebDriverWait(self.driver, WAIT_TIME)
                 table = wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
-                
-                if data_type == "daily":
-                    # Look for daily view container
-                    daily_div = self.driver.find_element(By.CLASS_NAME, "daily")
-                    if daily_div:
-                        # Try to find table within daily div
-                        table = daily_div.find_element(By.TAG_NAME, "table")
-                    else:
-                        # Try switching to daily view
-                        if self._switch_to_daily_view():
-                            # Wait for daily data to load
-                            time.sleep(2)
-                            daily_div = self.driver.find_element(By.CLASS_NAME, "daily")
-                            table = daily_div.find_element(By.TAG_NAME, "table")
                 
                 # Extract track info
                 try:
@@ -129,8 +148,11 @@ class ChartScraper:
                     title = "Unknown"
                     artist = "Unknown"
                 
-                # Extract table data
-                df = self._extract_table_data(table)
+                # Extract table data based on type
+                if data_type == "daily":
+                    df = self._extract_daily_table_data(table)
+                else:
+                    df = self._extract_weekly_table_data(table)
                 
                 if df.empty:
                     logging.warning("No data found in table")
