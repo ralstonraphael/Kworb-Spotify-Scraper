@@ -48,7 +48,7 @@ def extract_track_id(url: str) -> str:
     
     return track_id
 
-def basic_analysis(df):
+def basic_analysis(df, data_type="weekly"):
     """Provide basic statistical analysis without AI."""
     insights = []
     
@@ -78,7 +78,20 @@ def basic_analysis(df):
             last_streams = chart_df.iloc[-1]['Global']
             growth = ((last_streams - first_streams) / first_streams) * 100
             trend = "📈 growing" if growth > 0 else "📉 declining"
-            insights.append(f"📊 The track is {trend} with {abs(growth):.1f}% change over the tracked period")
+            
+            # Add time-specific insights
+            if data_type == "daily":
+                days = (chart_df.iloc[-1]['date'] - chart_df.iloc[0]['date']).days
+                avg_daily = chart_df['Global'].mean()
+                insights.append(f"📊 Daily average: {avg_daily:,.0f} streams")
+                insights.append(f"📅 Data spans {days} days")
+            else:  # weekly
+                weeks = len(chart_df)
+                avg_weekly = chart_df['Global'].mean()
+                insights.append(f"📊 Weekly average: {avg_weekly:,.0f} streams")
+                insights.append(f"📅 Data spans {weeks} weeks")
+            
+            insights.append(f"📈 The track is {trend} with {abs(growth):.1f}% change over the tracked period")
     
     return "\n\n".join(insights)
 
@@ -105,6 +118,14 @@ def main():
 
     # API Key handling in sidebar with skip option
     st.sidebar.title("⚙️ Settings")
+    
+    # Add data type selector
+    data_type = st.sidebar.radio(
+        "Data Type",
+        ["Weekly", "Daily"],
+        help="Choose whether to fetch weekly or daily streaming data"
+    ).lower()
+    
     enable_ai = st.sidebar.checkbox(
         "Enable AI Analysis",
         value=False,
@@ -159,9 +180,12 @@ def main():
             
             st.info(f"🔍 Analyzing track: {track_id}")
             
-            # Scrape track history
-            with st.spinner("Fetching track data..."):
-                df = scraper.scrape_track_history(track_id)
+            # Scrape track history based on data type
+            with st.spinner(f"Fetching {data_type} track data..."):
+                if data_type == "daily":
+                    df = scraper.scrape_track_history(track_id, data_type="daily")
+                else:
+                    df = scraper.scrape_track_history(track_id, data_type="weekly")
 
             if df is not None and not df.empty:
                 # Display track info
@@ -169,11 +193,13 @@ def main():
                 artist_name = df['artist_name'].iloc[0]
                 
                 st.subheader("🎵 Track Information")
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns([2, 2, 1])
                 with col1:
                     st.markdown(f"**Song:** {song_name}")
                 with col2:
                     st.markdown(f"**Artist:** {artist_name}")
+                with col3:
+                    st.markdown(f"**Data Type:** {data_type.capitalize()}")
                 
                 # Display the data
                 st.subheader("📊 Track Performance")
@@ -237,9 +263,9 @@ def main():
                         elif "Incorrect API key" in str(e):
                             st.warning("Invalid API key. Please check your OpenAI API key in the sidebar.")
                         # Fallback to basic analysis
-                        st.write(basic_analysis(df))
+                        st.write(basic_analysis(df, data_type))
                 else:
-                    st.write(basic_analysis(df))
+                    st.write(basic_analysis(df, data_type))
                 
                 # Create line chart for streaming history
                 st.subheader("📈 Streaming History")
