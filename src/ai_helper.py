@@ -4,30 +4,63 @@ import os
 from typing import Dict, List, Optional
 import openai
 import streamlit as st
+import json
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
 class AIHelper:
-    """Helper class for AI-powered data processing."""
+    """Helper class for AI-powered analysis of chart data."""
     
-    def __init__(self):
+    def __init__(self, api_key: str):
         """Initialize the AI helper."""
-        # Try to get API key from environment variable first
-        api_key = os.getenv("OPENAI_API_KEY")
-        
-        # If not found in environment, try Streamlit secrets
-        if not api_key and hasattr(st, "secrets"):
-            api_key = st.secrets.get("OPENAI_API_KEY")
-        
         if not api_key:
-            raise ValueError(
-                "OpenAI API key not found. Please set it in your environment variables "
-                "or Streamlit secrets with the key 'OPENAI_API_KEY'"
-            )
+            raise ValueError("OpenAI API key is required")
         
-        # Set the API key for the OpenAI client
-        openai.api_key = api_key
-        logger.info("OpenAI API key configured successfully")
+        self.client = OpenAI(api_key=api_key)
+    
+    def analyze_track_data(self, data: List[Dict]) -> str:
+        """
+        Analyze track streaming data using OpenAI's API.
+        Returns exactly 5 bullet points of key information.
+        """
+        try:
+            # Convert data to a readable format
+            data_str = json.dumps(data, indent=2)
+            
+            # Create the prompt
+            prompt = f"""
+            Analyze this Spotify streaming data and provide EXACTLY 5 key insights.
+            Focus on:
+            - Total streams and major milestones
+            - Growth rate and trends
+            - Peak performance periods
+            - Market-specific highlights
+            - Notable achievements
+            
+            Format as 5 bullet points ONLY. Keep each point to one line, data-driven and concise.
+            Do not include any introduction or additional text.
+            
+            Data:
+            {data_str}
+            """
+            
+            # Get completion from OpenAI
+            completion = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a data analyst providing exactly 5 bullet points of key streaming performance insights. Be concise and data-driven."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.5,  # Lower temperature for more consistent output
+                max_tokens=200  # Reduced token limit for more concise output
+            )
+            
+            return completion.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.error(f"Error analyzing data with AI: {e}")
+            return "Error analyzing data. Please try again."
 
     def clean_and_format_data(self, raw_data: List[Dict]) -> List[Dict]:
         """
@@ -80,5 +113,5 @@ class AIHelper:
             return cleaned_data
             
         except Exception as e:
-            print(f"Error in AI data cleaning: {e}")
+            logger.error(f"Error in AI data cleaning: {e}")
             return raw_data 

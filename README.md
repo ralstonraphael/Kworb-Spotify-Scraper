@@ -1,39 +1,16 @@
 # Spotify Chart Analyzer
 
-<div align="center">
-  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Spotify_logo_without_text.svg/168px-Spotify_logo_without_text.svg.png" width="120px" />
-  
-  <h3>Powerful Spotify Chart Analysis with AI Insights</h3>
-  
-  <p>Track streaming performance, analyze trends, and get AI-powered insights for any Spotify track.</p>
+A tool for analyzing Spotify track performance data using data from KWORB.net. This tool provides insights into streaming performance, trends, and market-specific data.
 
-  <p>
-    <a href="#features">Features</a> •
-    <a href="#installation">Installation</a> •
-    <a href="#usage">Usage</a> •
-    <a href="#development">Development</a> •
-    <a href="#contributing">Contributing</a>
-  </p>
-</div>
+## Features
 
-## ✨ Features
+- Track streaming history visualization
+- Global and market-specific performance metrics
+- AI-powered insights (requires OpenAI API key)
+- Interactive data exploration
+- Beautiful Streamlit UI
 
-- **Real-time Chart Data** - Get up-to-date streaming numbers from Spotify charts
-- **Global Market Analysis** - Track performance across different regions
-- **AI-Powered Insights** - Get intelligent analysis of streaming patterns and trends
-- **Beautiful Visualization** - Modern, interactive charts and metrics
-- **Easy to Use** - Simple interface with support for various URL formats
-- **Detailed Metrics** - Comprehensive streaming data with historical trends
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Python 3.11 or higher
-- OpenAI API key for AI insights
-- Chrome/Chromium for web scraping
-
-### Installation
+## Installation
 
 1. Clone the repository:
 
@@ -45,8 +22,8 @@ cd Website_Scraper
 2. Create and activate a virtual environment:
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 3. Install dependencies:
@@ -55,87 +32,114 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Set up your environment variables:
+4. Install system dependencies (if needed):
 
 ```bash
-cp .env.example .env
-# Edit .env with your OpenAI API key
+# On Ubuntu/Debian:
+sudo apt-get update
+sudo apt-get install -y chromium-browser
+
+# On macOS:
+brew install --cask chromium
+
+# For better performance on macOS:
+xcode-select --install
+pip install watchdog
 ```
 
-## 💫 Usage
+## Usage
 
 1. Start the Streamlit app:
 
 ```bash
-streamlit run src/ui/streamlit_app.py
+streamlit run main.py
 ```
 
-2. Open your browser and navigate to the displayed URL (usually http://localhost:8501)
+2. Enter your OpenAI API key in the sidebar (required for AI insights)
 
-3. Enter your OpenAI API key in the settings sidebar
+3. Enter a Spotify track URL in one of these formats:
 
-4. Paste a Spotify track URL to analyze its performance
+   - Full URL: `https://open.spotify.com/track/...`
+   - Spotify URI: `spotify:track:...`
+   - Track ID: Just the ID
 
-### Supported URL Formats
+4. View the analysis results:
+   - Track Information
+   - Performance Metrics
+   - Key Insights
+   - Streaming History Chart
+   - Full Data Table
 
-- Full URL: `https://open.spotify.com/track/...`
-- Spotify URI: `spotify:track:...`
-- Track ID: Just the ID string
-
-## 🛠 Development
-
-### Project Structure
+## Project Structure
 
 ```
-Website_Scraper/
-├── data/               # Data storage
-│   ├── processed/      # Cleaned and processed data
-│   └── raw/           # Raw scraped data
-├── src/               # Source code
-│   ├── ui/            # Streamlit frontend
-│   ├── scraper.py     # Data scraping logic
-│   ├── cleaner.py     # Data cleaning utilities
-│   └── ai_helper.py   # AI analysis tools
-├── tests/             # Test suite
-└── requirements.txt   # Project dependencies
+.
+├── src/
+│   ├── ui/
+│   │   └── streamlit_app.py    # Main Streamlit application
+│   ├── ai_helper.py            # AI analysis functionality
+│   ├── scraper.py             # Web scraping functionality
+│   ├── cleaner.py            # Data cleaning utilities
+│   └── config.py             # Configuration settings
+├── data/
+│   ├── raw/                  # Raw scraped data
+│   └── processed/            # Processed data
+├── main.py                  # Application entry point
+├── requirements.txt         # Python dependencies
+├── packages.txt            # System dependencies
+└── README.md              # This file
 ```
 
-### Running Tests
+## Configuration
+
+The app can be configured through:
+
+1. Environment Variables (create a `.env` file):
+
+```
+OPENAI_API_KEY=your_api_key_here
+```
+
+2. Streamlit Settings (`.streamlit/config.toml`):
+
+```toml
+[theme]
+primaryColor = "#FF4B4B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
+font = "sans serif"
+```
+
+3. Application Settings (`src/config.py`)
+
+## Development
+
+1. Install in development mode:
 
 ```bash
-pytest tests/
+pip install -e .
 ```
 
-### Code Style
-
-This project follows PEP 8 guidelines. Format your code using:
+2. Run tests:
 
 ```bash
-black src/ tests/
+python -m pytest tests/
 ```
 
-## 🤝 Contributing
-
-We welcome contributions! Here's how you can help:
+## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- [Streamlit](https://streamlit.io/) for the amazing web framework
-- [OpenAI](https://openai.com/) for powering our AI insights
-- [Spotify](https://spotify.com/) for their incredible platform
-
----
-
-<div align="center">
-  Made with ❤️ by <a href="https://github.com/ralstonraphael">Ralston Raphael</a>
-</div>
+- [KWORB.net](https://kworb.net/) for providing Spotify chart data
+- [Streamlit](https://streamlit.io/) for the amazing UI framework
+- [OpenAI](https://openai.com/) for the AI capabilities

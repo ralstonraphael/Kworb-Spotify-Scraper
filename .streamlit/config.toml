@@ -1,9 +1,9 @@
 [theme]
-primaryColor = "#007AFF"  # Apple's signature blue
-backgroundColor = "#FFFFFF"  # Clean white background
-secondaryBackgroundColor = "#F5F5F7"  # Apple's light gray
-textColor = "#1D1D1F"  # Apple's dark gray text
-font = "SF Pro Display"  # Apple's system font
+primaryColor = "#FF4B4B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
+font = "sans serif"
 
 [server]
 enableCORS = true
@@ -11,32 +11,21 @@ enableXsrfProtection = true
 maxUploadSize = 200
 enableWebsocketCompression = true
 maxMessageSize = 200
-port = 8501
-address = "localhost"
 
 [browser]
 gatherUsageStats = false
 serverAddress = "localhost"
-serverPort = 8501
 
 [runner]
 fastReruns = true
 magicEnabled = true
 installTracer = true
-fixMatplotlib = true
 postScriptGC = true
 
 [client]
 showErrorDetails = true
-toolbarMode = "minimal"  # Minimal UI for cleaner look
-caching = true
-displayEnabled = true
+toolbarMode = "minimal"
 
 [logger]
 level = "info"
-messageFormat = "%(asctime)s %(levelname)s %(message)s"
-
-[global]
-developmentMode = false
-disableWatchdogWarning = true
-suppressDeprecationWarnings = true 
+messageFormat = "%(asctime)s %(levelname)s %(message)s" 
