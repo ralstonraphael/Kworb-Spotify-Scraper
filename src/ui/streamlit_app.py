@@ -48,6 +48,40 @@ def extract_track_id(url: str) -> str:
     
     return track_id
 
+def basic_analysis(df):
+    """Provide basic statistical analysis without AI."""
+    insights = []
+    
+    # Global performance
+    if 'Global' in df.columns:
+        total_streams = df[df['date'] == 'Total']['Global'].iloc[0]
+        peak_streams = df[df['date'] == 'Peak']['Global'].iloc[0] if 'Peak' in df['date'].values else None
+        insights.append(f"📈 Total Global Streams: {total_streams:,.0f}")
+        if peak_streams:
+            insights.append(f"🔝 Peak Global Streams: {peak_streams:,.0f}")
+    
+    # Market performance
+    markets = [col for col in df.columns if col not in ['date', 'song_name', 'artist_name', 'Global']]
+    if markets:
+        total_row = df[df['date'] == 'Total'].iloc[0]
+        top_market = max(markets, key=lambda x: total_row[x])
+        insights.append(f"🌍 Best Performing Market: {top_market} with {total_row[top_market]:,.0f} streams")
+    
+    # Growth analysis
+    chart_df = df[~df['date'].isin(['Total', 'Peak'])].copy()
+    if not chart_df.empty:
+        chart_df['date'] = pd.to_datetime(chart_df['date'])
+        chart_df = chart_df.sort_values('date')
+        
+        if len(chart_df) > 1:
+            first_streams = chart_df.iloc[0]['Global']
+            last_streams = chart_df.iloc[-1]['Global']
+            growth = ((last_streams - first_streams) / first_streams) * 100
+            trend = "📈 growing" if growth > 0 else "📉 declining"
+            insights.append(f"📊 The track is {trend} with {abs(growth):.1f}% change over the tracked period")
+    
+    return "\n\n".join(insights)
+
 def main():
     """Main function to run the Streamlit app."""
     # Set up page config
@@ -61,7 +95,7 @@ def main():
 
     st.markdown("""
     This app helps you analyze Spotify chart data and track performance over time.
-    Enter a Spotify track URL to get started!
+    Enter a Spotify track URL that is currently in the charts to get started!
     
     **Supported URL formats:**
     - Full URL: `https://open.spotify.com/track/...`
@@ -69,30 +103,37 @@ def main():
     - Track ID: Just paste the ID
     """)
 
-    # API Key handling in sidebar
+    # API Key handling in sidebar with skip option
     st.sidebar.title("⚙️ Settings")
-    api_key = st.sidebar.text_input(
-        "OpenAI API Key",
-        type="password",
-        help="Enter your OpenAI API key. Get one at https://platform.openai.com/api-keys",
-        placeholder="sk-..."
+    enable_ai = st.sidebar.checkbox(
+        "Enable AI Analysis",
+        value=False,
+        help="Toggle to enable/disable AI-powered insights (requires OpenAI API key)"
     )
+    
+    api_key = None
+    if enable_ai:
+        api_key = st.sidebar.text_input(
+            "OpenAI API Key",
+            type="password",
+            help="Enter your OpenAI API key. Get one at https://platform.openai.com/api-keys",
+            placeholder="sk-..."
+        )
+        
+        if not api_key:
+            st.sidebar.warning("⚠️ Please enter your OpenAI API key to enable AI analysis.")
+            st.sidebar.info("Don't have an API key? Get one at [OpenAI's website](https://platform.openai.com/api-keys)")
 
-    if not api_key:
-        st.warning("⚠️ Please enter your OpenAI API key in the sidebar to enable AI analysis.")
-        st.info("Don't have an API key? Get one at [OpenAI's website](https://platform.openai.com/api-keys)")
-        return
-
-    # Initialize AI helper with error handling
-    try:
-        ai_helper = AIHelper(api_key=api_key)
-    except ValueError as e:
-        st.error(f"Error initializing AI helper: {str(e)}")
-        st.warning("Please check your OpenAI API key and try again.")
-        return
-    except Exception as e:
-        st.error(f"Unexpected error initializing AI helper: {str(e)}")
-        return
+    # Initialize AI helper if enabled
+    ai_helper = None
+    if enable_ai and api_key:
+        try:
+            ai_helper = AIHelper(api_key=api_key)
+        except ValueError as e:
+            st.error(f"Error initializing AI helper: {str(e)}")
+            st.warning("Please check your OpenAI API key and try again.")
+        except Exception as e:
+            st.error(f"Unexpected error initializing AI helper: {str(e)}")
 
     # Initialize scraper
     try:
@@ -182,19 +223,23 @@ def main():
                                 f"Peak: {peak_row[top_market]:,.0f}" if peak_row is not None else None
                             )
                 
-                # Process data with AI first
-                try:
-                    with st.spinner("Analyzing data..."):
-                        insights = ai_helper.analyze_track_data(df.to_dict("records"))
-
-                    st.subheader("🤖 Key Insights")
-                    st.write(insights)
-                except Exception as e:
-                    st.error(f"Error analyzing data with AI: {str(e)}")
-                    if "Rate limit" in str(e):
-                        st.warning("OpenAI API rate limit reached. Please wait a few minutes and try again.")
-                    elif "Incorrect API key" in str(e):
-                        st.warning("Invalid API key. Please check your OpenAI API key in the sidebar.")
+                # Process data with AI if enabled, otherwise show basic analysis
+                st.subheader("📈 Key Insights")
+                if enable_ai and ai_helper:
+                    try:
+                        with st.spinner("Analyzing data with AI..."):
+                            insights = ai_helper.analyze_track_data(df.to_dict("records"))
+                        st.write(insights)
+                    except Exception as e:
+                        st.error(f"Error analyzing data with AI: {str(e)}")
+                        if "Rate limit" in str(e):
+                            st.warning("OpenAI API rate limit reached. Please wait a few minutes and try again.")
+                        elif "Incorrect API key" in str(e):
+                            st.warning("Invalid API key. Please check your OpenAI API key in the sidebar.")
+                        # Fallback to basic analysis
+                        st.write(basic_analysis(df))
+                else:
+                    st.write(basic_analysis(df))
                 
                 # Create line chart for streaming history
                 st.subheader("📈 Streaming History")
