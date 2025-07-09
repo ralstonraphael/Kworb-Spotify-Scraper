@@ -106,26 +106,24 @@ def main():
 
     st.title("🎵 Spotify Chart Analyzer")
 
-    st.markdown("""
-    This app helps you analyze Spotify chart data and track performance over time.
-    Enter a Spotify track URL that is currently in the charts to get started!
-    
-    **Supported URL formats:**
-    - Full URL: `https://open.spotify.com/track/...`
-    - Spotify URI: `spotify:track:...`
-    - Track ID: Just paste the ID
-    """)
-
-    # API Key handling in sidebar with skip option
+    # Sidebar navigation
     st.sidebar.title("⚙️ Settings")
+    
+    # Add data source selector
+    data_source = st.sidebar.radio(
+        "Data Source",
+        ["Track History", "Country Charts"],
+        help="Choose whether to analyze a specific track or country charts"
+    )
     
     # Add data type selector
     data_type = st.sidebar.radio(
         "Data Type",
-        ["Weekly", "Daily"],
-        help="Choose whether to fetch weekly or daily streaming data"
+        ["Daily", "Weekly"],
+        help="Choose whether to fetch daily or weekly data"
     ).lower()
     
+    # AI Analysis toggle
     enable_ai = st.sidebar.checkbox(
         "Enable AI Analysis",
         value=False,
@@ -163,147 +161,197 @@ def main():
         st.error(f"Error initializing scraper: {str(e)}")
         return
 
-    # Track URL input
-    st.sidebar.subheader("🎵 Track History")
-    track_url = st.sidebar.text_input(
-        "Enter Spotify Track URL",
-        placeholder="https://open.spotify.com/track/..."
-    )
+    if data_source == "Track History":
+        st.markdown("""
+        Enter a Spotify track URL to analyze its streaming history.
+        
+        **Supported URL formats:**
+        - Full URL: `https://open.spotify.com/track/...`
+        - Spotify URI: `spotify:track:...`
+        - Track ID: Just paste the ID
+        """)
+        
+        # Track URL input
+        track_url = st.text_input(
+            "Enter Spotify Track URL",
+            placeholder="https://open.spotify.com/track/..."
+        )
 
-    if track_url:
-        try:
-            # Extract track ID from URL
-            track_id = extract_track_id(track_url)
-            
-            if not track_id:
-                return
-            
-            st.info(f"🔍 Analyzing track: {track_id}")
-            
-            # Scrape track history based on data type
-            with st.spinner(f"Fetching {data_type} track data..."):
-                if data_type == "daily":
-                    df = scraper.scrape_track_history(track_id, data_type="daily")
-                else:
-                    df = scraper.scrape_track_history(track_id, data_type="weekly")
+        if track_url:
+            try:
+                # Extract track ID from URL
+                track_id = extract_track_id(track_url)
+                
+                if not track_id:
+                    return
+                
+                st.info(f"🔍 Analyzing track: {track_id}")
+                
+                # Scrape track history
+                with st.spinner(f"Fetching {data_type} track data..."):
+                    df = scraper.scrape_track_history(track_id, data_type=data_type)
 
-            if df is not None and not df.empty:
-                # Display track info
-                song_name = df['song_name'].iloc[0]
-                artist_name = df['artist_name'].iloc[0]
-                
-                st.subheader("🎵 Track Information")
-                col1, col2, col3 = st.columns([2, 2, 1])
-                with col1:
-                    st.markdown(f"**Song:** {song_name}")
-                with col2:
-                    st.markdown(f"**Artist:** {artist_name}")
-                with col3:
-                    st.markdown(f"**Data Type:** {data_type.capitalize()}")
-                
-                # Display the data
-                st.subheader("📊 Track Performance")
-                
-                # Create metrics for Total streams
-                if 'Total' in df['date'].values:
-                    total_row = df[df['date'] == 'Total'].iloc[0]
-                    peak_row = df[df['date'] == 'Peak'].iloc[0] if 'Peak' in df['date'].values else None
+                if df is not None and not df.empty:
+                    # Display track info
+                    song_name = df['song_name'].iloc[0]
+                    artist_name = df['artist_name'].iloc[0]
                     
-                    # Display metrics in columns
-                    metric_cols = st.columns(4)
+                    st.subheader("🎵 Track Information")
+                    col1, col2, col3 = st.columns([2, 2, 1])
+                    with col1:
+                        st.markdown(f"**Song:** {song_name}")
+                    with col2:
+                        st.markdown(f"**Artist:** {artist_name}")
+                    with col3:
+                        st.markdown(f"**Data Type:** {data_type.capitalize()}")
                     
-                    # Global streams
-                    with metric_cols[0]:
-                        st.metric(
-                            "Global Streams",
-                            f"{total_row['Global']:,.0f}",
-                            f"Peak: {peak_row['Global']:,.0f}" if peak_row is not None else None
-                        )
+                    # Display the data
+                    st.subheader("📊 Track Performance")
                     
-                    # US streams
-                    if 'US' in df.columns:
-                        with metric_cols[1]:
+                    # Create metrics for Total streams
+                    if 'Total' in df['date'].values:
+                        total_row = df[df['date'] == 'Total'].iloc[0]
+                        peak_row = df[df['date'] == 'Peak'].iloc[0] if 'Peak' in df['date'].values else None
+                        
+                        # Display metrics in columns
+                        metric_cols = st.columns(4)
+                        
+                        # Global streams
+                        with metric_cols[0]:
                             st.metric(
-                                "US Streams",
-                                f"{total_row['US']:,.0f}",
-                                f"Peak: {peak_row['US']:,.0f}" if peak_row is not None else None
+                                "Global Streams",
+                                f"{total_row['Global']:,.0f}",
+                                f"Peak: {peak_row['Global']:,.0f}" if peak_row is not None else None
                             )
+                        
+                        # US streams
+                        if 'US' in df.columns:
+                            with metric_cols[1]:
+                                st.metric(
+                                    "US Streams",
+                                    f"{total_row['US']:,.0f}",
+                                    f"Peak: {peak_row['US']:,.0f}" if peak_row is not None else None
+                                )
+                        
+                        # UK streams
+                        if 'GB' in df.columns:
+                            with metric_cols[2]:
+                                st.metric(
+                                    "UK Streams",
+                                    f"{total_row['GB']:,.0f}",
+                                    f"Peak: {peak_row['GB']:,.0f}" if peak_row is not None else None
+                                )
+                        
+                        # Other top market
+                        other_markets = [col for col in df.columns if col not in ['date', 'song_name', 'artist_name', 'Global', 'US', 'GB']]
+                        if other_markets:
+                            top_market = max(other_markets, key=lambda x: total_row[x])
+                            with metric_cols[3]:
+                                st.metric(
+                                    f"Top Market ({top_market})",
+                                    f"{total_row[top_market]:,.0f}",
+                                    f"Peak: {peak_row[top_market]:,.0f}" if peak_row is not None else None
+                                )
                     
-                    # UK streams
-                    if 'GB' in df.columns:
-                        with metric_cols[2]:
-                            st.metric(
-                                "UK Streams",
-                                f"{total_row['GB']:,.0f}",
-                                f"Peak: {peak_row['GB']:,.0f}" if peak_row is not None else None
-                            )
-                    
-                    # Other top market
-                    other_markets = [col for col in df.columns if col not in ['date', 'song_name', 'artist_name', 'Global', 'US', 'GB']]
-                    if other_markets:
-                        top_market = max(other_markets, key=lambda x: total_row[x])
-                        with metric_cols[3]:
-                            st.metric(
-                                f"Top Market ({top_market})",
-                                f"{total_row[top_market]:,.0f}",
-                                f"Peak: {peak_row[top_market]:,.0f}" if peak_row is not None else None
-                            )
-                
-                # Process data with AI if enabled, otherwise show basic analysis
-                st.subheader("📈 Key Insights")
-                if enable_ai and ai_helper:
-                    try:
-                        with st.spinner("Analyzing data with AI..."):
-                            insights = ai_helper.analyze_track_data(df.to_dict("records"))
-                        st.write(insights)
-                    except Exception as e:
-                        st.error(f"Error analyzing data with AI: {str(e)}")
-                        if "Rate limit" in str(e):
-                            st.warning("OpenAI API rate limit reached. Please wait a few minutes and try again.")
-                        elif "Incorrect API key" in str(e):
-                            st.warning("Invalid API key. Please check your OpenAI API key in the sidebar.")
-                        # Fallback to basic analysis
+                    # Process data with AI if enabled, otherwise show basic analysis
+                    st.subheader("📈 Key Insights")
+                    if enable_ai and ai_helper:
+                        try:
+                            with st.spinner("Analyzing data with AI..."):
+                                insights = ai_helper.analyze_track_data(df.to_dict("records"))
+                            st.write(insights)
+                        except Exception as e:
+                            st.error(f"Error analyzing data with AI: {str(e)}")
+                            if "Rate limit" in str(e):
+                                st.warning("OpenAI API rate limit reached. Please wait a few minutes and try again.")
+                            elif "Incorrect API key" in str(e):
+                                st.warning("Invalid API key. Please check your OpenAI API key in the sidebar.")
+                            # Fallback to basic analysis
+                            st.write(basic_analysis(df, data_type))
+                    else:
                         st.write(basic_analysis(df, data_type))
+                    
+                    # Create line chart for streaming history
+                    st.subheader("📈 Streaming History")
+                    
+                    # Filter out Total and Peak rows and sort by date
+                    chart_df = df[~df['date'].isin(['Total', 'Peak'])].copy()
+                    chart_df['date'] = pd.to_datetime(chart_df['date'])
+                    chart_df = chart_df.sort_values('date')
+                    
+                    # Create the line chart focusing on Global streams
+                    chart_data = pd.DataFrame({
+                        'Date': chart_df['date'],
+                        'Global Streams': chart_df['Global']
+                    })
+                    
+                    # Create and display the chart
+                    st.line_chart(
+                        chart_data.set_index('Date'),
+                        height=400,
+                        use_container_width=True
+                    )
+                    
+                    # Display the full data table in an expander
+                    with st.expander("📋 View Full Data"):
+                        st.dataframe(df, height=300)
+                    
                 else:
-                    st.write(basic_analysis(df, data_type))
+                    st.error("❌ No data found for this track. This could be because:")
+                    st.markdown("""
+                    - The track ID is invalid
+                    - The track is not available on Spotify
+                    - The website is blocking our requests
+                    - The website's structure has changed
+                    
+                    Please check the track URL and try again.
+                    """)
+            except Exception as e:
+                st.error(f"Error processing track: {str(e)}")
+    
+    else:  # Country Charts
+        st.markdown("""
+        View streaming charts for specific countries.
+        
+        **Available Countries:**
+        - US (United States)
+        - GB (United Kingdom)
+        - Global (Worldwide)
+        """)
+        
+        # Country selector
+        country_code = st.selectbox(
+            "Select Country",
+            ["us", "gb", "global"],
+            format_func=lambda x: x.upper()
+        )
+        
+        if country_code:
+            try:
+                with st.spinner(f"Fetching {data_type} chart data for {country_code.upper()}..."):
+                    df = scraper.scrape_country_chart(country_code, data_type)
                 
-                # Create line chart for streaming history
-                st.subheader("📈 Streaming History")
-                
-                # Filter out Total and Peak rows and sort by date
-                chart_df = df[~df['date'].isin(['Total', 'Peak'])].copy()
-                chart_df['date'] = pd.to_datetime(chart_df['date'])
-                chart_df = chart_df.sort_values('date')
-                
-                # Create the line chart focusing on Global streams
-                chart_data = pd.DataFrame({
-                    'Date': chart_df['date'],
-                    'Global Streams': chart_df['Global']
-                })
-                
-                # Create and display the chart
-                st.line_chart(
-                    chart_data.set_index('Date'),
-                    height=400,
-                    use_container_width=True
-                )
-                
-                # Display the full data table in an expander
-                with st.expander("📋 View Full Data"):
-                    st.dataframe(df, height=300)
-                
-            else:
-                st.error("❌ No data found for this track. This could be because:")
-                st.markdown("""
-                - The track ID is invalid
-                - The track is not available on Spotify
-                - The website is blocking our requests
-                - The website's structure has changed
-                
-                Please check the track URL and try again.
-                """)
-        except Exception as e:
-            st.error(f"Error processing track: {str(e)}")
+                if df is not None and not df.empty:
+                    st.subheader(f"📊 {country_code.upper()} {data_type.capitalize()} Charts")
+                    
+                    # Display the chart data
+                    st.dataframe(df, height=600)
+                    
+                    # Process data with AI if enabled
+                    if enable_ai and ai_helper:
+                        st.subheader("🤖 AI Analysis")
+                        try:
+                            with st.spinner("Analyzing chart data..."):
+                                insights = ai_helper.analyze_chart_data(df.to_dict("records"))
+                            st.write(insights)
+                        except Exception as e:
+                            st.error(f"Error analyzing data with AI: {str(e)}")
+                    
+                else:
+                    st.error(f"❌ No data found for {country_code.upper()} {data_type} charts.")
+                    
+            except Exception as e:
+                st.error(f"Error fetching country chart: {str(e)}")
 
 if __name__ == "__main__":
     main() 

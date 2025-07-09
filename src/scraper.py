@@ -103,6 +103,10 @@ class ChartScraper:
         """Get the URL for a track's chart data."""
         return f"{KWORB_BASE_URL}/track/{track_id}.html"
     
+    def _get_url_for_country(self, country_code: str, data_type: str = "daily") -> str:
+        """Get the URL for a country's chart data."""
+        return f"{KWORB_BASE_URL}/country/{country_code}_{data_type}.html"
+    
     def _wait_for_page_load(self):
         """Wait for the page to be fully loaded."""
         try:
@@ -131,58 +135,6 @@ class ChartScraper:
             return True
         except Exception as e:
             logging.error(f"Error waiting for page load: {e}")
-            return False
-    
-    def _switch_view(self, view_type: str) -> bool:
-        """Switch between daily and weekly views."""
-        try:
-            # Add random delay before clicking
-            self._random_sleep(1.0, 2.0)
-            
-            # Wait for the button to be present and visible
-            wait = WebDriverWait(self.driver, WAIT_TIME)
-            button = wait.until(
-                visibility_of_element_located((By.ID, view_type))
-            )
-            
-            if button:
-                logging.info(f"Found {view_type} button, clicking...")
-                
-                # Scroll button into view with random offset
-                offset = random.randint(-100, 100)
-                self.driver.execute_script(
-                    f"arguments[0].scrollIntoView(true); window.scrollBy(0, {offset});",
-                    button
-                )
-                self._random_sleep(0.5, 1.5)
-                
-                # Try JavaScript click first
-                try:
-                    self.driver.execute_script("arguments[0].click();", button)
-                except:
-                    # Fallback to regular click
-                    button.click()
-                
-                # Wait for view to update with random delay
-                self._random_sleep(2.0, 3.0)
-                
-                # Verify the view switched by checking button state
-                try:
-                    button = self.driver.find_element(By.ID, view_type)
-                    if "bold" in button.get_attribute("style"):
-                        logging.info(f"Successfully switched to {view_type} view")
-                        return True
-                except:
-                    pass
-                
-                logging.warning(f"Could not verify {view_type} view switch")
-                return False
-            
-            logging.warning(f"Button for {view_type} view not found")
-            return False
-            
-        except Exception as e:
-            logging.error(f"Error switching to {view_type} view: {e}")
             return False
     
     def _extract_cell_value(self, cell) -> str:
@@ -236,6 +188,67 @@ class ChartScraper:
         logging.info(f"Created DataFrame with {len(df)} rows and {len(df.columns)} columns")
         return df
     
+    def scrape_country_chart(self, country_code: str, data_type: str = "daily") -> Optional[pd.DataFrame]:
+        """Scrape chart data for a specific country."""
+        if not self.use_selenium or not self.driver:
+            logging.error("Selenium WebDriver not initialized")
+            return None
+        
+        url = self._get_url_for_country(country_code, data_type)
+        retries = 0
+        
+        while retries < RETRY_COUNT:
+            try:
+                logging.info(f"Loading URL: {url}")
+                self.driver.get(url)
+                
+                # Wait for page to load
+                if not self._wait_for_page_load():
+                    logging.error("Page failed to load completely")
+                    retries += 1
+                    self._random_sleep(2.0, 4.0)  # Longer delay between retries
+                    continue
+                
+                # Save page source for debugging
+                with open(f"debug_{country_code}_{data_type}.html", "w", encoding="utf-8") as f:
+                    f.write(self.driver.page_source)
+                logging.info(f"Saved page source to debug_{country_code}_{data_type}.html")
+                
+                # Wait for table
+                wait = WebDriverWait(self.driver, WAIT_TIME)
+                table = wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+                
+                # Extract table data
+                df = self._extract_table_data(table)
+                
+                if df.empty:
+                    logging.warning("No data found in table")
+                    retries += 1
+                    self._random_sleep(2.0, 4.0)
+                    continue
+                
+                # Add metadata
+                df['country'] = country_code.upper()
+                df['data_type'] = data_type
+                
+                # Clean up numeric columns
+                for col in df.columns:
+                    if col not in ['date', 'country', 'data_type', 'song_name', 'artist_name']:
+                        df[col] = pd.to_numeric(df[col].str.replace(',', ''), errors='coerce')
+                
+                return df
+                
+            except TimeoutException:
+                logging.error(f"Timeout waiting for table to load: {url}")
+                retries += 1
+                self._random_sleep(2.0, 4.0)
+            except Exception as e:
+                logging.error(f"Error scraping country chart {country_code}: {e}")
+                retries += 1
+                self._random_sleep(2.0, 4.0)
+        
+        return None
+    
     def scrape_track_history(self, track_id: str, data_type: str = "weekly") -> Optional[pd.DataFrame]:
         """Scrape streaming history for a track."""
         if not self.use_selenium or not self.driver:
@@ -264,17 +277,14 @@ class ChartScraper:
                 
                 # Switch to the desired view
                 if data_type == "daily":
-                    if not self._switch_view("daily"):
-                        logging.error("Failed to switch to daily view")
-                        retries += 1
-                        self._random_sleep(2.0, 4.0)
-                        continue
-                else:
-                    if not self._switch_view("weekly"):
-                        logging.error("Failed to switch to weekly view")
-                        retries += 1
-                        self._random_sleep(2.0, 4.0)
-                        continue
+                    # Try to find and click the daily button
+                    try:
+                        daily_button = self.driver.find_element(By.ID, "daily")
+                        if daily_button:
+                            daily_button.click()
+                            self._random_sleep(2.0, 3.0)
+                    except:
+                        logging.warning("Could not find daily view button")
                 
                 # Wait for table after view switch
                 wait = WebDriverWait(self.driver, WAIT_TIME)
