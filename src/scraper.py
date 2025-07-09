@@ -11,6 +11,7 @@ from selenium.webdriver.support.expected_conditions import presence_of_element_l
 from fake_useragent import UserAgent
 import logging
 import time
+import random
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, List, Union
@@ -30,19 +31,73 @@ class ChartScraper:
     def _setup_driver(self):
         """Set up the Selenium WebDriver with Chrome."""
         options = webdriver.ChromeOptions()
-        options.add_argument('--headless')
+        options.add_argument('--headless=new')  # Use new headless mode
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
         options.add_argument('--window-size=1920,1080')
-        options.add_argument(f'user-agent={UserAgent().random}')
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        # Add random user agent
+        ua = UserAgent()
+        user_agent = ua.random
+        options.add_argument(f'user-agent={user_agent}')
+        
+        # Add additional headers
+        options.add_argument('--accept-language=en-US,en;q=0.9')
+        options.add_argument('--accept=text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8')
         
         try:
             self.driver = webdriver.Chrome(options=options)
+            self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": user_agent,
+                "platform": "MacIntel",
+                "acceptLanguage": "en-US,en;q=0.9"
+            })
+            
+            # Add webdriver detection evasion
+            self.driver.execute_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                window.chrome = {
+                    runtime: {}
+                };
+            """)
+            
             self.driver.implicitly_wait(WAIT_TIME)
         except Exception as e:
             logging.error(f"Failed to initialize Chrome WebDriver: {e}")
             raise
+    
+    def _random_sleep(self, min_seconds: float = 1.0, max_seconds: float = 3.0):
+        """Add random delay to simulate human behavior."""
+        time.sleep(random.uniform(min_seconds, max_seconds))
+    
+    def _simulate_human_behavior(self):
+        """Simulate human-like behavior on the page."""
+        try:
+            # Random scroll
+            scroll_amount = random.randint(100, 500)
+            self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+            self._random_sleep(0.5, 1.5)
+            
+            # Random mouse movements
+            actions = ActionChains(self.driver)
+            for _ in range(random.randint(2, 5)):
+                x = random.randint(0, 500)
+                y = random.randint(0, 500)
+                actions.move_by_offset(x, y)
+                self._random_sleep(0.1, 0.3)
+            
+            # Sometimes move back to top
+            if random.random() < 0.3:
+                self.driver.execute_script("window.scrollTo(0, 0);")
+                self._random_sleep(0.5, 1.0)
+        except Exception as e:
+            logging.warning(f"Error during human behavior simulation: {e}")
     
     def _get_url_for_track(self, track_id: str) -> str:
         """Get the URL for a track's chart data."""
@@ -62,13 +117,17 @@ class ChartScraper:
                 });
             """)
             
+            # Add random delay
+            self._random_sleep(1.0, 2.0)
+            
             # Wait for any table to be present
             WebDriverWait(self.driver, WAIT_TIME).until(
                 presence_of_element_located((By.TAG_NAME, "table"))
             )
             
-            # Wait a bit more for JavaScript to execute
-            time.sleep(2)
+            # Simulate human behavior
+            self._simulate_human_behavior()
+            
             return True
         except Exception as e:
             logging.error(f"Error waiting for page load: {e}")
@@ -77,6 +136,9 @@ class ChartScraper:
     def _switch_view(self, view_type: str) -> bool:
         """Switch between daily and weekly views."""
         try:
+            # Add random delay before clicking
+            self._random_sleep(1.0, 2.0)
+            
             # Wait for the button to be present and visible
             wait = WebDriverWait(self.driver, WAIT_TIME)
             button = wait.until(
@@ -85,6 +147,15 @@ class ChartScraper:
             
             if button:
                 logging.info(f"Found {view_type} button, clicking...")
+                
+                # Scroll button into view with random offset
+                offset = random.randint(-100, 100)
+                self.driver.execute_script(
+                    f"arguments[0].scrollIntoView(true); window.scrollBy(0, {offset});",
+                    button
+                )
+                self._random_sleep(0.5, 1.5)
+                
                 # Try JavaScript click first
                 try:
                     self.driver.execute_script("arguments[0].click();", button)
@@ -92,8 +163,8 @@ class ChartScraper:
                     # Fallback to regular click
                     button.click()
                 
-                # Wait for view to update
-                time.sleep(3)
+                # Wait for view to update with random delay
+                self._random_sleep(2.0, 3.0)
                 
                 # Verify the view switched by checking button state
                 try:
@@ -183,6 +254,7 @@ class ChartScraper:
                 if not self._wait_for_page_load():
                     logging.error("Page failed to load completely")
                     retries += 1
+                    self._random_sleep(2.0, 4.0)  # Longer delay between retries
                     continue
                 
                 # Save page source for debugging
@@ -195,11 +267,13 @@ class ChartScraper:
                     if not self._switch_view("daily"):
                         logging.error("Failed to switch to daily view")
                         retries += 1
+                        self._random_sleep(2.0, 4.0)
                         continue
                 else:
                     if not self._switch_view("weekly"):
                         logging.error("Failed to switch to weekly view")
                         retries += 1
+                        self._random_sleep(2.0, 4.0)
                         continue
                 
                 # Wait for table after view switch
@@ -224,7 +298,7 @@ class ChartScraper:
                 if df.empty:
                     logging.warning("No data found in table")
                     retries += 1
-                    time.sleep(2)  # Wait before retrying
+                    self._random_sleep(2.0, 4.0)
                     continue
                 
                 # Add track info columns
@@ -241,11 +315,11 @@ class ChartScraper:
             except TimeoutException:
                 logging.error(f"Timeout waiting for table to load: {url}")
                 retries += 1
-                time.sleep(2)  # Wait before retrying
+                self._random_sleep(2.0, 4.0)
             except Exception as e:
                 logging.error(f"Error scraping track {track_id}: {e}")
                 retries += 1
-                time.sleep(2)  # Wait before retrying
+                self._random_sleep(2.0, 4.0)
         
         return None
     
