@@ -1,9 +1,9 @@
 [theme]
-primaryColor = "#FF4B4B"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F0F2F6"
-textColor = "#262730"
-font = "sans serif"
+primaryColor = "#007AFF"  # Apple's signature blue
+backgroundColor = "#FFFFFF"  # Clean white background
+secondaryBackgroundColor = "#F5F5F7"  # Apple's light gray
+textColor = "#1D1D1F"  # Apple's dark gray text
+font = "SF Pro Display"  # Apple's system font
 
 [server]
 enableCORS = true
@@ -19,6 +19,7 @@ fastReruns = true
 
 [client]
 showErrorDetails = true
+toolbarMode = "minimal"  # Minimal UI for cleaner look
 
 [logger]
 level = "info" 
