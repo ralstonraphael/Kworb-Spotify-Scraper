@@ -40,28 +40,41 @@ class ChartScraper:
             logging.error(f"Failed to initialize Chrome WebDriver: {e}")
             raise
     
-    def _get_url_for_track(self, track_id: str, data_type: str = "weekly") -> str:
+    def _get_url_for_track(self, track_id: str) -> str:
         """Get the URL for a track's chart data."""
-        base_url = f"{KWORB_BASE_URL}/track/{track_id}"
-        if data_type == "daily":
-            return f"{base_url}_daily.html"
-        return f"{base_url}.html"
+        return f"{KWORB_BASE_URL}/track/{track_id}.html"
     
-    def _extract_daily_cell_value(self, cell) -> str:
-        """Extract value from a daily data cell with nested spans."""
+    def _switch_view(self, view_type: str) -> bool:
+        """Switch between daily and weekly views."""
         try:
-            # Find the span with class 's' which contains the actual value
+            # Find and click the appropriate view button
+            button = self.driver.find_element(By.ID, view_type)
+            if button:
+                button.click()
+                time.sleep(3)  # Wait for the view to update
+                return True
+        except NoSuchElementException:
+            logging.warning(f"Could not find {view_type} view button")
+        except Exception as e:
+            logging.warning(f"Error switching to {view_type} view: {e}")
+        return False
+    
+    def _extract_cell_value(self, cell) -> str:
+        """Extract value from a cell, handling both simple and nested span structures."""
+        try:
+            # First try to find the span with class 's' (daily view)
             value_span = cell.find_element(By.CSS_SELECTOR, "span.s")
             if value_span:
                 return value_span.text.strip()
         except NoSuchElementException:
-            pass
-        
-        # Fallback to direct cell text if span not found
-        return cell.text.strip()
+            # If no span.s found, try direct cell text (weekly view)
+            return cell.text.strip()
+        except Exception as e:
+            logging.warning(f"Error extracting cell value: {e}")
+            return ""
     
-    def _extract_daily_table_data(self, table_element) -> pd.DataFrame:
-        """Extract data from a daily table with nested spans."""
+    def _extract_table_data(self, table_element) -> pd.DataFrame:
+        """Extract data from a table element into a DataFrame."""
         headers = []
         try:
             header_cells = table_element.find_elements(By.TAG_NAME, "th")
@@ -76,39 +89,11 @@ class ChartScraper:
             for row in row_elements:
                 cells = row.find_elements(By.TAG_NAME, "td")
                 if cells:  # Skip header row
-                    # Extract values, handling nested spans
                     row_data = []
                     for cell in cells:
-                        value = self._extract_daily_cell_value(cell)
+                        value = self._extract_cell_value(cell)
                         row_data.append(value)
                     
-                    if len(row_data) == len(headers):  # Only add rows that match header length
-                        rows.append(row_data)
-        except NoSuchElementException:
-            logging.warning("No data rows found in table")
-            return pd.DataFrame()
-        
-        # Create DataFrame
-        df = pd.DataFrame(rows, columns=headers)
-        return df
-    
-    def _extract_weekly_table_data(self, table_element) -> pd.DataFrame:
-        """Extract data from a weekly table."""
-        headers = []
-        try:
-            header_cells = table_element.find_elements(By.TAG_NAME, "th")
-            headers = [cell.text.strip() for cell in header_cells]
-        except NoSuchElementException:
-            logging.warning("No header cells found in table")
-            return pd.DataFrame()
-        
-        rows = []
-        try:
-            row_elements = table_element.find_elements(By.TAG_NAME, "tr")
-            for row in row_elements:
-                cells = row.find_elements(By.TAG_NAME, "td")
-                if cells:  # Skip header row
-                    row_data = [cell.text.strip() for cell in cells]
                     if len(row_data) == len(headers):  # Only add rows that match header length
                         rows.append(row_data)
         except NoSuchElementException:
@@ -125,13 +110,25 @@ class ChartScraper:
             logging.error("Selenium WebDriver not initialized")
             return None
         
-        url = self._get_url_for_track(track_id, data_type)
+        url = self._get_url_for_track(track_id)
         retries = 0
         
         while retries < RETRY_COUNT:
             try:
                 self.driver.get(url)
-                time.sleep(2)  # Wait for JavaScript to execute
+                time.sleep(3)  # Wait for initial page load
+                
+                # Switch to the desired view
+                if data_type == "daily":
+                    if not self._switch_view("daily"):
+                        logging.error("Failed to switch to daily view")
+                        retries += 1
+                        continue
+                else:
+                    if not self._switch_view("weekly"):
+                        logging.error("Failed to switch to weekly view")
+                        retries += 1
+                        continue
                 
                 # Wait for any table to load
                 wait = WebDriverWait(self.driver, WAIT_TIME)
@@ -148,11 +145,8 @@ class ChartScraper:
                     title = "Unknown"
                     artist = "Unknown"
                 
-                # Extract table data based on type
-                if data_type == "daily":
-                    df = self._extract_daily_table_data(table)
-                else:
-                    df = self._extract_weekly_table_data(table)
+                # Extract table data
+                df = self._extract_table_data(table)
                 
                 if df.empty:
                     logging.warning("No data found in table")
