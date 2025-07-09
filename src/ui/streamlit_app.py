@@ -4,6 +4,23 @@ import pandas as pd
 from pathlib import Path
 import sys
 import os
+import gc
+import tracemalloc
+import psutil
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def log_memory_usage():
+    """Log current memory usage."""
+    process = psutil.Process(os.getpid())
+    mem = process.memory_info().rss / 1024 / 1024  # Convert to MB
+    logger.info(f"Memory usage: {mem:.2f} MB")
+
+# Start memory tracking
+tracemalloc.start()
 
 # Add the project root to Python path
 project_root = str(Path(__file__).parent.parent.parent)
@@ -102,6 +119,12 @@ def apply_custom_css():
 
 def main():
     """Main function to run the Streamlit app."""
+    # Log initial memory usage
+    log_memory_usage()
+    
+    # Force garbage collection
+    gc.collect()
+    
     # Set up page config
     st.set_page_config(
         page_title=config.STREAMLIT_PAGE_TITLE,
@@ -112,6 +135,9 @@ def main():
     
     # Apply custom CSS
     apply_custom_css()
+
+    # Log memory after setup
+    log_memory_usage()
 
     # Create a clean header with logo and title
     col1, col2 = st.columns([1, 4])
@@ -145,201 +171,212 @@ def main():
             """, unsafe_allow_html=True)
             return
 
-    # Initialize AI helper with error handling
     try:
-        ai_helper = AIHelper(api_key=api_key)
-    except ValueError as e:
-        st.error(f"Error initializing AI helper: {str(e)}")
-        st.warning("Please check your OpenAI API key and try again.")
-        return
-    except Exception as e:
-        st.error(f"Unexpected error initializing AI helper: {str(e)}")
-        return
-
-    # Initialize scraper
-    try:
-        scraper = ChartScraper(use_selenium=True)
-    except Exception as e:
-        st.error(f"Error initializing scraper: {str(e)}")
-        return
-
-    # Modern search bar
-    st.markdown("### 🔍 Track Search")
-    track_url = st.text_input(
-        "",
-        placeholder="Enter Spotify track URL or ID...",
-        help="Paste a Spotify track URL, URI, or ID to analyze its performance"
-    )
-
-    # Display supported formats in a clean way
-    with st.expander("ℹ️ Supported URL formats"):
-        st.markdown("""
-        - **Spotify URL**: `https://open.spotify.com/track/...`
-        - **Spotify URI**: `spotify:track:...`
-        - **Track ID**: Just the ID string
-        """)
-
-    if track_url:
+        # Initialize components with proper cleanup
+        if 'ai_helper' not in st.session_state:
+            st.session_state.ai_helper = AIHelper(api_key=api_key)
+        if 'scraper' not in st.session_state:
+            st.session_state.scraper = ChartScraper(use_selenium=True)
+            
+        # Log memory after initialization
+        log_memory_usage()
+        
+        # Initialize scraper
         try:
-            # Extract track ID from URL
-            track_id = extract_track_id(track_url)
-            
-            if not track_id:
-                return
-            
-            # Create a progress container
-            progress_container = st.empty()
-            with progress_container.container():
-                st.info("🔍 Analyzing track data...")
-                progress_bar = st.progress(0)
-            
-            # Scrape track history
-            df = scraper.scrape_track_history(track_id)
-            progress_bar.progress(50)
+            scraper = st.session_state.scraper
+        except Exception as e:
+            st.error(f"Error initializing scraper: {str(e)}")
+            return
 
-            if df is not None and not df.empty:
-                # Update progress
-                progress_bar.progress(75)
+        # Modern search bar
+        st.markdown("### 🔍 Track Search")
+        track_url = st.text_input(
+            "",
+            placeholder="Enter Spotify track URL or ID...",
+            help="Paste a Spotify track URL, URI, or ID to analyze its performance"
+        )
+
+        # Display supported formats in a clean way
+        with st.expander("ℹ️ Supported URL formats"):
+            st.markdown("""
+            - **Spotify URL**: `https://open.spotify.com/track/...`
+            - **Spotify URI**: `spotify:track:...`
+            - **Track ID**: Just the ID string
+            """)
+
+        if track_url:
+            try:
+                # Extract track ID from URL
+                track_id = extract_track_id(track_url)
                 
-                # Clear progress container
-                progress_container.empty()
+                if not track_id:
+                    return
                 
-                # Display track info in a modern card
-                song_name = df['song_name'].iloc[0]
-                artist_name = df['artist_name'].iloc[0]
+                # Create a progress container
+                progress_container = st.empty()
+                with progress_container.container():
+                    st.info("🔍 Analyzing track data...")
+                    progress_bar = st.progress(0)
                 
-                st.markdown(f"""
-                <div style="background-color: #F5F5F7; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;">
-                    <h2 style="margin: 0; color: #1D1D1F;">{song_name}</h2>
-                    <p style="margin: 0.5rem 0 0 0; color: #6E6E73;">{artist_name}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Create modern metrics display
-                if 'Total' in df['date'].values:
-                    total_row = df[df['date'] == 'Total'].iloc[0]
-                    peak_row = df[df['date'] == 'Peak'].iloc[0] if 'Peak' in df['date'].values else None
+                # Scrape track history
+                df = scraper.scrape_track_history(track_id)
+                progress_bar.progress(50)
+
+                if df is not None and not df.empty:
+                    # Update progress
+                    progress_bar.progress(75)
                     
-                    st.markdown("### 📊 Performance Metrics")
+                    # Clear progress container
+                    progress_container.empty()
                     
-                    # Create metric columns with modern styling
-                    metrics_container = st.container()
-                    with metrics_container:
-                        cols = st.columns(4)
+                    # Display track info in a modern card
+                    song_name = df['song_name'].iloc[0]
+                    artist_name = df['artist_name'].iloc[0]
+                    
+                    st.markdown(f"""
+                    <div style="background-color: #F5F5F7; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;">
+                        <h2 style="margin: 0; color: #1D1D1F;">{song_name}</h2>
+                        <p style="margin: 0.5rem 0 0 0; color: #6E6E73;">{artist_name}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create modern metrics display
+                    if 'Total' in df['date'].values:
+                        total_row = df[df['date'] == 'Total'].iloc[0]
+                        peak_row = df[df['date'] == 'Peak'].iloc[0] if 'Peak' in df['date'].values else None
                         
-                        # Global streams
-                        with cols[0]:
-                            st.metric(
-                                "Global Streams",
-                                f"{total_row['Global']:,.0f}",
-                                f"Peak: {peak_row['Global']:,.0f}" if peak_row is not None else None,
-                                delta_color="normal"
-                            )
+                        st.markdown("### 📊 Performance Metrics")
                         
-                        # US streams
-                        if 'US' in df.columns:
-                            with cols[1]:
+                        # Create metric columns with modern styling
+                        metrics_container = st.container()
+                        with metrics_container:
+                            cols = st.columns(4)
+                            
+                            # Global streams
+                            with cols[0]:
                                 st.metric(
-                                    "US Streams",
-                                    f"{total_row['US']:,.0f}",
-                                    f"Peak: {peak_row['US']:,.0f}" if peak_row is not None else None,
+                                    "Global Streams",
+                                    f"{total_row['Global']:,.0f}",
+                                    f"Peak: {peak_row['Global']:,.0f}" if peak_row is not None else None,
                                     delta_color="normal"
                                 )
-                        
-                        # UK streams
-                        if 'GB' in df.columns:
-                            with cols[2]:
-                                st.metric(
-                                    "UK Streams",
-                                    f"{total_row['GB']:,.0f}",
-                                    f"Peak: {peak_row['GB']:,.0f}" if peak_row is not None else None,
-                                    delta_color="normal"
-                                )
-                        
-                        # Other top market
-                        other_markets = [col for col in df.columns if col not in ['date', 'song_name', 'artist_name', 'Global', 'US', 'GB']]
-                        if other_markets:
-                            top_market = max(other_markets, key=lambda x: total_row[x])
-                            with cols[3]:
-                                st.metric(
-                                    f"Top Market ({top_market})",
-                                    f"{total_row[top_market]:,.0f}",
-                                    f"Peak: {peak_row[top_market]:,.0f}" if peak_row is not None else None,
-                                    delta_color="normal"
-                                )
-                
-                # Update progress
-                progress_bar.progress(90)
-                
-                # Process data with AI
-                try:
-                    with st.spinner("Generating AI insights..."):
-                        insights = ai_helper.analyze_track_data(df.to_dict("records"))
-                        
-                        st.markdown("### 🤖 AI Insights")
-                        st.markdown(f"""
-                        <div style="background-color: #F5F5F7; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;">
-                            {insights}
-                        </div>
-                        """, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"Error analyzing data with AI: {str(e)}")
-                    if "Rate limit" in str(e):
-                        st.warning("OpenAI API rate limit reached. Please wait a few minutes and try again.")
-                    elif "Incorrect API key" in str(e):
-                        st.warning("Invalid API key. Please check your OpenAI API key in the sidebar.")
-                
-                # Create modern streaming history chart
-                st.markdown("### 📈 Streaming History")
-                
-                # Filter out Total and Peak rows and sort by date
-                chart_df = df[~df['date'].isin(['Total', 'Peak'])].copy()
-                chart_df['date'] = pd.to_datetime(chart_df['date'])
-                chart_df = chart_df.sort_values('date')
-                
-                # Create the line chart focusing on Global streams
-                chart_data = pd.DataFrame({
-                    'Date': chart_df['date'],
-                    'Global Streams': chart_df['Global']
-                })
-                
-                # Create and display the chart with custom styling
-                st.line_chart(
-                    chart_data.set_index('Date'),
-                    height=400,
-                    use_container_width=True
-                )
-                
-                # Display the full data table in a modern expander
-                with st.expander("📋 View Full Data"):
-                    st.dataframe(
-                        df.style.format({
-                            col: "{:,.0f}" for col in df.columns 
-                            if col not in ['date', 'song_name', 'artist_name']
-                        }),
-                        height=300,
+                            
+                            # US streams
+                            if 'US' in df.columns:
+                                with cols[1]:
+                                    st.metric(
+                                        "US Streams",
+                                        f"{total_row['US']:,.0f}",
+                                        f"Peak: {peak_row['US']:,.0f}" if peak_row is not None else None,
+                                        delta_color="normal"
+                                    )
+                            
+                            # UK streams
+                            if 'GB' in df.columns:
+                                with cols[2]:
+                                    st.metric(
+                                        "UK Streams",
+                                        f"{total_row['GB']:,.0f}",
+                                        f"Peak: {peak_row['GB']:,.0f}" if peak_row is not None else None,
+                                        delta_color="normal"
+                                    )
+                            
+                            # Other top market
+                            other_markets = [col for col in df.columns if col not in ['date', 'song_name', 'artist_name', 'Global', 'US', 'GB']]
+                            if other_markets:
+                                top_market = max(other_markets, key=lambda x: total_row[x])
+                                with cols[3]:
+                                    st.metric(
+                                        f"Top Market ({top_market})",
+                                        f"{total_row[top_market]:,.0f}",
+                                        f"Peak: {peak_row[top_market]:,.0f}" if peak_row is not None else None,
+                                        delta_color="normal"
+                                    )
+                    
+                    # Update progress
+                    progress_bar.progress(90)
+                    
+                    # Process data with AI
+                    try:
+                        with st.spinner("Generating AI insights..."):
+                            insights = st.session_state.ai_helper.analyze_track_data(df.to_dict("records"))
+                            
+                            st.markdown("### 🤖 AI Insights")
+                            st.markdown(f"""
+                            <div style="background-color: #F5F5F7; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;">
+                                {insights}
+                            </div>
+                            """, unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"Error analyzing data with AI: {str(e)}")
+                        if "Rate limit" in str(e):
+                            st.warning("OpenAI API rate limit reached. Please wait a few minutes and try again.")
+                        elif "Incorrect API key" in str(e):
+                            st.warning("Invalid API key. Please check your OpenAI API key in the sidebar.")
+                    
+                    # Create modern streaming history chart
+                    st.markdown("### 📈 Streaming History")
+                    
+                    # Filter out Total and Peak rows and sort by date
+                    chart_df = df[~df['date'].isin(['Total', 'Peak'])].copy()
+                    chart_df['date'] = pd.to_datetime(chart_df['date'])
+                    chart_df = chart_df.sort_values('date')
+                    
+                    # Create the line chart focusing on Global streams
+                    chart_data = pd.DataFrame({
+                        'Date': chart_df['date'],
+                        'Global Streams': chart_df['Global']
+                    })
+                    
+                    # Create and display the chart with custom styling
+                    st.line_chart(
+                        chart_data.set_index('Date'),
+                        height=400,
                         use_container_width=True
                     )
-                
-                # Complete progress
-                progress_bar.progress(100)
-                
-            else:
-                st.error("❌ No data found for this track")
-                st.markdown("""
-                <div style="background-color: #F5F5F7; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;">
-                    <h3 style="margin: 0; color: #1D1D1F;">Possible reasons:</h3>
-                    <ul style="margin: 0.5rem 0 0 0; color: #6E6E73;">
-                        <li>Invalid track ID</li>
-                        <li>Track not available on Spotify</li>
-                        <li>Website blocking our requests</li>
-                        <li>Website structure has changed</li>
-                    </ul>
-                </div>
-                """, unsafe_allow_html=True)
-                
-        except Exception as e:
-            st.error(f"Error processing track: {str(e)}")
+                    
+                    # Display the full data table in a modern expander
+                    with st.expander("📋 View Full Data"):
+                        st.dataframe(
+                            df.style.format({
+                                col: "{:,.0f}" for col in df.columns 
+                                if col not in ['date', 'song_name', 'artist_name']
+                            }),
+                            height=300,
+                            use_container_width=True
+                        )
+                    
+                    # Complete progress
+                    progress_bar.progress(100)
+                    
+                else:
+                    st.error("❌ No data found for this track")
+                    st.markdown("""
+                    <div style="background-color: #F5F5F7; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;">
+                        <h3 style="margin: 0; color: #1D1D1F;">Possible reasons:</h3>
+                        <ul style="margin: 0.5rem 0 0 0; color: #6E6E73;">
+                            <li>Invalid track ID</li>
+                            <li>Track not available on Spotify</li>
+                            <li>Website blocking our requests</li>
+                            <li>Website structure has changed</li>
+                        </ul>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+            except Exception as e:
+                st.error(f"Error processing track: {str(e)}")
+
+    except Exception as e:
+        logger.error(f"Error in main execution: {str(e)}")
+        st.error(f"An error occurred: {str(e)}")
+    finally:
+        # Cleanup
+        gc.collect()
+        log_memory_usage()
 
 if __name__ == "__main__":
-    main() 
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"Fatal error: {str(e)}")
+        st.error("The application encountered an error. Please refresh the page.") 

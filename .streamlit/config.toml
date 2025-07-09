@@ -9,17 +9,34 @@ font = "SF Pro Display"  # Apple's system font
 enableCORS = true
 enableXsrfProtection = true
 maxUploadSize = 200
-enableWebsocketCompression = false
+enableWebsocketCompression = true
+maxMessageSize = 200
+port = 8501
+address = "localhost"
 
 [browser]
 gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
 
 [runner]
 fastReruns = true
+magicEnabled = true
+installTracer = true
+fixMatplotlib = true
+postScriptGC = true
 
 [client]
 showErrorDetails = true
 toolbarMode = "minimal"  # Minimal UI for cleaner look
+caching = true
+displayEnabled = true
 
 [logger]
-level = "info" 
+level = "info"
+messageFormat = "%(asctime)s %(levelname)s %(message)s"
+
+[global]
+developmentMode = false
+disableWatchdogWarning = true
+suppressDeprecationWarnings = true 
