@@ -2,8 +2,8 @@
 
 # Scraper settings
 KWORB_BASE_URL = "https://kworb.net/spotify"
-WAIT_TIME = 10  # seconds
-RETRY_COUNT = 3
+WAIT_TIME = 15  # seconds - increased for slower connections
+RETRY_COUNT = 5  # increased number of retries
 
 # Streamlit settings
 STREAMLIT_PAGE_TITLE = "Spotify Chart Analyzer"
